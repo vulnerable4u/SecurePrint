@@ -1,4 +1,3 @@
-// database.js
 const { Pool } = require('pg');
 
 // This function initializes a connection pool for PostgreSQL.
@@ -12,11 +11,16 @@ async function initializeDatabase() {
     }
 
     try {
+        // When deploying to Render, the DATABASE_URL will not be for 'localhost'.
+        // We can use this to determine if we need to enable SSL.
+        const isProduction = !connectionString.includes('localhost');
+
         const db = new Pool({
             connectionString: connectionString,
-            // Render requires SSL for external connections but not for internal ones.
-            // This configuration handles both cases.
-            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+            // Enforce SSL for all non-local connections.
+            // rejectUnauthorized: false is often needed on platforms like Render
+            // to allow connections to their managed database services.
+            ssl: isProduction ? { rejectUnauthorized: false } : false
         });
 
         // The table creation logic is updated for PostgreSQL syntax.

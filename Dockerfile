@@ -22,12 +22,13 @@ FROM node:18-slim
 # Set working directory
 WORKDIR /app
 
-# Install ClamAV and LibreOffice
-# The package name for headless LibreOffice on Debian is 'libreoffice'
+# Install system dependencies: ClamAV, LibreOffice, and CA Certificates
+# ca-certificates is required for freshclam to download updates over HTTPS
 RUN apt-get update && apt-get install -y --no-install-recommends \
     clamav \
     clamav-daemon \
     libreoffice \
+    ca-certificates \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

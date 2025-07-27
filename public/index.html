@@ -1,0 +1,115 @@
+<!-- FILE: public/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecurePrint - Secure Document Sharing</title>
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" xintegrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <!-- Generated Tailwind CSS -->
+    <link rel="stylesheet" href="/dist/output.css">
+</head>
+<body class="text-gray-800 bg-gray-50 font-sans">
+
+    <div class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="bg-white/95 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-30 shadow-lg">
+            <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex items-center justify-between h-20">
+                    <a href="#home" data-section="home" class="flex items-center space-x-2">
+                        <i class="fas fa-shield-alt text-3xl text-blue-600"></i>
+                        <div>
+                            <div class="text-xl font-bold text-gray-900">SecurePrint</div>
+                            <div class="text-xs text-gray-500">Secure Document Sharing</div>
+                        </div>
+                    </a>
+                    <nav id="desktop-nav" class="hidden md:flex items-center space-x-4">
+                        <a href="#converter" data-section="converter" class="px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm bg-blue-500 text-white hover:bg-blue-600">Converter</a>
+                        <a href="#shop" data-section="shop" class="px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm bg-indigo-500 text-white hover:bg-indigo-600">Print Shop</a>
+                    </nav>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-grow">
+            <section id="home" class="page-section">
+                <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
+                    <h1 class="text-4xl md:text-6xl font-extrabold text-gray-900 leading-tight">Print <span class="text-blue-600">Securely</span><br />Without Sharing Personal Info</h1>
+                    <p class="mt-6 max-w-3xl mx-auto text-lg text-gray-600">Upload your documents safely, get a one-time access code, and print at any shop without revealing your contact details or compromising your privacy.</p>
+                    <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+                        <button id="openUploadModalBtn" class="bg-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-blue-700 transition-all duration-300 shadow-md hover:shadow-lg w-full sm:w-auto">Upload Document</button>
+                        <a href="#shop" data-section="shop" class="bg-indigo-500 text-white font-bold py-3 px-8 rounded-lg hover:bg-indigo-600 transition-all duration-300 shadow-md hover:shadow-lg w-full sm:w-auto cursor-pointer">I'm a Print Shop</a>
+                    </div>
+                </div>
+                <div id="about" class="bg-gray-100 py-20">
+                    <div class="container mx-auto px-4 sm:px-6 lg:px-8"><div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-10 text-center"><div class="flex flex-col items-center"><div class="flex items-center justify-center h-16 w-16 rounded-full bg-blue-100 text-blue-600 mb-4"><i class="fas fa-lock text-2xl"></i></div><h3 class="text-lg font-bold text-gray-900 mb-2">Encrypted Transfer</h3><p class="text-gray-600">End-to-end encryption protects your documents.</p></div><div class="flex flex-col items-center"><div class="flex items-center justify-center h-16 w-16 rounded-full bg-green-100 text-green-600 mb-4"><i class="fas fa-key text-2xl"></i></div><h3 class="text-lg font-bold text-gray-900 mb-2">One-Time Access</h3><p class="text-gray-600">Unique codes that expire after use.</p></div><div class="flex flex-col items-center"><div class="flex items-center justify-center h-16 w-16 rounded-full bg-purple-100 text-purple-600 mb-4"><i class="fas fa-clock text-2xl"></i></div><h3 class="text-lg font-bold text-gray-900 mb-2">Time Limited</h3><p class="text-gray-600">Documents auto-delete after a set time.</p></div><div class="flex flex-col items-center"><div class="flex items-center justify-center h-16 w-16 rounded-full bg-orange-100 text-orange-600 mb-4"><i class="fas fa-user-secret text-2xl"></i></div><h3 class="text-lg font-bold text-gray-900 mb-2">No Personal Info</h3><p class="text-gray-600">Print without sharing contact details.</p></div></div></div>
+                </div>
+            </section>
+            
+            <section id="converter" class="page-section">
+                 <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-20"><div class="bg-white rounded-2xl p-8 max-w-3xl mx-auto text-center shadow-xl border border-gray-100"><div id="converter-initial-state"><h1 class="text-3xl font-bold text-gray-900 mb-2">File Converter</h1><p class="text-gray-600 mb-8">Convert your files to a different format.</p><form id="convertForm"><div class="mb-4"><input type="file" id="convertFileInput" name="document" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" required></div><div class="mb-6"><select id="convertFormatSelect" name="targetFormat" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 py-2 px-3" required><option value="" disabled selected>Select a file first</option></select></div><button type="submit" class="bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:from-blue-600 hover:to-blue-700 w-full flex items-center justify-center gap-2 transform hover:scale-105 transition-transform duration-200 shadow-md hover:shadow-lg"><i class="fas fa-sync-alt mr-2"></i>Convert File</button></form></div><div id="converter-loading-state" class="hidden flex flex-col items-center justify-center py-12"><div class="spinner"></div><p class="mt-4 text-lg font-semibold text-gray-700">Converting your file...</p></div><div id="converter-success-state" class="hidden text-center"><i class="fas fa-check-circle text-6xl text-green-500 mb-4"></i><h2 class="text-2xl font-bold text-gray-900">Conversion Successful!</h2><p class="text-gray-600 mt-2 mb-6">Your file is ready. You can download it now or secure it with an access code for printing.</p><div class="p-4 bg-gray-50 rounded-lg"><div class="flex flex-col sm:flex-row items-center justify-center gap-4"><a id="downloadLink" class="bg-green-500 text-white font-bold py-3 px-8 rounded-lg hover:bg-green-600 w-full sm:w-auto" download>Download File</a><button id="secure-converted-btn" class="bg-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-blue-700 w-full sm:w-auto flex items-center justify-center gap-2">Secure This File</button></div></div><button class="reset-converter-btn mt-6 text-sm text-gray-500 hover:text-blue-600">Convert another file</button></div><div id="converter-secured-state" class="hidden text-center"><i class="fas fa-shield-alt text-6xl text-blue-600 mb-4"></i><h2 class="text-2xl font-bold text-gray-900">File Secured!</h2><p class="text-gray-600 mt-2 mb-6">Provide the code below at any print shop to access your file.</p><div class="my-4 p-4 bg-blue-50 rounded-lg"><p class="font-semibold">Your Secure Access Code:</p><div class="flex items-center justify-center gap-4 mt-2"><p id="convertedAccessCode" class="text-3xl font-bold text-blue-600 tracking-widest"></p><div id="converted-qr-code-container" class="w-28 h-28"></div></div></div><button class="reset-converter-btn mt-6 text-sm text-gray-500 hover:text-blue-600">Convert another file</button></div></div></div>
+            </section>
+
+            <section id="shop" class="page-section">
+                 <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-20"><div class="bg-white rounded-2xl p-8 max-w-3xl mx-auto text-center shadow-lg border border-gray-100"><h1 class="text-3xl font-bold text-gray-900 mb-2">Print Shop Portal</h1><p class="text-gray-600 mb-8">Enter the customer's access code to securely print the document.</p><form id="printCodeForm"><div class="flex flex-col sm:flex-row items-center justify-center gap-4"><input type="text" id="codeInput" placeholder="Enter Access Code" required class="text-center text-lg tracking-widest font-mono w-full sm:w-auto flex-grow px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"><button type="submit" class="bg-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-blue-700 w-full sm:w-auto">Check Code</button></div></form><div id="print-actions" class="hidden mt-4 flex flex-col sm:flex-row items-center justify-center gap-4"><div id="password-section" class="w-full sm:w-auto flex-grow hidden"><input type="password" id="passwordInput" placeholder="Enter Password" class="text-center text-lg w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"></div><button id="printBtn" type="button" class="bg-green-500 text-white font-bold py-3 px-8 rounded-lg hover:bg-green-600 w-full sm:w-auto flex items-center justify-center gap-2"><i class="fas fa-print mr-2"></i>Print Document</button></div></div></div>
+            </section>
+        </main>
+
+        <footer class="bg-gray-900 text-white"><div class="container mx-auto px-4 sm:px-6 lg:px-8 py-8 text-center"><p>&copy; 2025 SecurePrint. All Rights Reserved.</p></div></footer>
+    </div>
+    
+    <div id="upload-modal-backdrop" class="modal-backdrop fixed top-0 left-0 w-full h-full bg-black bg-opacity-60 z-40 hidden"></div>
+    <div id="upload-modal" class="modal fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-11/12 max-w-lg bg-white rounded-2xl shadow-2xl p-8 z-50 hidden">
+        <h3 class="text-2xl font-bold text-gray-900 mb-4 text-center">Upload Your Document</h3>
+        <form id="uploadForm">
+            <div id="upload-initial-view">
+                <div class="mb-4" id="fileInputContainer">
+                    <label id="drop-zone" for="fileInput" class="block w-full cursor-pointer border-2 border-dashed border-gray-300 rounded-lg p-10 text-center hover:border-blue-500 transition-colors">
+                        <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-3"></i>
+                        <span class="block font-semibold text-gray-700">Click to browse or drag & drop</span>
+                        <span id="fileName" class="block text-sm text-gray-500 mt-2">No file selected</span>
+                    </label>
+                    <input type="file" id="fileInput" name="document" class="hidden">
+                </div>
+                <div id="uploadOptionsContainer" class="mb-4">
+                    <label for="expirySelect" class="text-sm font-medium text-gray-700">Expires In</label>
+                    <select id="expirySelect" name="expiry" class="mt-1 w-full border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="1h">1 Hour</option>
+                        <option value="24h" selected>24 Hours</option>
+                        <option value="7d">7 Days</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="upload-result" class="hidden my-4 p-4 bg-blue-50 rounded-lg">
+                <p class="font-semibold text-center">Your Secure Access Code:</p>
+                <div class="flex items-center justify-center gap-4 mt-2">
+                    <p id="accessCode" class="text-3xl font-bold text-blue-600 tracking-widest"></p>
+                    <div id="qr-code-container" class="w-28 h-28"></div>
+                </div>
+            </div>
+
+            <div id="upload-actions-initial" class="flex gap-4">
+                <button type="button" id="closeUploadModalBtn" class="w-full bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300">Cancel</button>
+                <button id="uploadSubmitBtn" type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2">Generate Code</button>
+            </div>
+            
+            <div id="upload-actions-success" class="hidden flex gap-4">
+                <button type="button" id="cancelAndDeleteBtn" class="w-full bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300">Cancel</button>
+                <button type="button" id="copyCodeBtn" class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2">
+                    <i class="fas fa-copy mr-2"></i>Copy Code
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <div id="confirmation-message" class="hidden fixed bottom-5 right-5 bg-green-500 text-white py-3 px-5 rounded-lg shadow-lg z-50"></div>
+
+    <!-- Professional QR Code Library -->
+    <script type="text/javascript" src="https://unpkg.com/qr-code-styling@1.5.0/lib/qr-code-styling.js"></script>
+    <!-- Main Application Script -->
+    <script src="main.js" defer></script>
+</body>
+</html>

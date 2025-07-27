@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom styles can be added here */
+@layer components {
+    .nav-link.active {
+        @apply text-blue-600 font-semibold;
+    }
+    .page-section {
+        display: none;
+    }
+    .page-section.active {
+        display: block;
+        animation: fadeIn 0.5s ease-in-out;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .spinner {
+        border: 2px solid rgba(0,0,0,0.1);
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        border-left-color: #3b82f6;
+        animation: spin 1s ease infinite;
+    }
+    .spinner-light {
+        border: 2px solid rgba(255,255,255,0.3);
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border-left-color: #fff;
+        animation: spin 1s ease infinite;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    #drop-zone.drag-over {
+        @apply border-blue-500 bg-blue-100;
+    }
+}

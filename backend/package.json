@@ -15,11 +15,9 @@
     "express": "^4.19.2",
     "cors": "^2.8.5",
     "multer": "2.0.2",
-    "firebase-admin": "^13.0.0",
     "uuid": "^9.0.1",
-    "cloudinary": "^2.5.0",
     "dotenv": "^16.4.5",
-    "streamifier": "^0.1.1"
+    "appwrite": "^13.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"

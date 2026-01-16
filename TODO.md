@@ -1,68 +1,91 @@
-# SecurePrint Security Enhancement Checklist
+# Security Enforcement Implementation Plan
 
-## Current State Analysis
-- Backend uses Cloudinary for file storage
-- OTC codes are generated and returned to client
-- Files are accessible via direct Cloudinary URLs
-- No client-side encryption implemented
+## Phase 1: Remove Insecure Dependencies
 
-## Required Security Enhancements
+### Backend
+- [x] Remove `cloudinary` from `backend/package.json`
+- [x] Remove `firebase-admin` from `backend/package.json`
+- [x] Remove `streamifier` (no longer needed without Cloudinary)
 
-### 1. Remove Cloudinary
-- [ ] Remove Cloudinary dependencies from backend/package.json
-- [ ] Remove Cloudinary configuration from backend/server.js
-- [ ] Remove Cloudinary upload logic
+### Frontend  
+- [x] Remove `firebase` from `frontend/package.json`
 
-### 2. Disable and remove firebase storage & Enable Appwrite Storage
-- [ ] Add Appwrite Storage SDK to backend dependencies
-- [ ] Initialize Appwrite Storage in backend
-- [ ] Implement Appwrite Storage upload functionality
-- [ ] Update file upload endpoint to use Appwrite Storage
+### Files to Delete
+- [x] Delete `backend/firebaseAdmin.js`
 
-### 3. Apply Secure Rules
-- [ ] Create Storage security rules file
-- [ ] Implement rules to deny all direct access (backend-only access)
+## Phase 2: Add Appwrite Dependencies
 
-### 4. Client-side Encryption Implementation
-- [ ] Add crypto-js or similar encryption library to frontend
-- [ ] Implement file encryption before upload in UploadArea.tsx
-- [ ] Generate encryption keys client-side
-- [ ] Send encrypted files to backend
+### Backend
+- [x] Add `appwrite` package to `backend/package.json`
 
-### 5. Server-side OTC Storage
-- [ ] Modify OTC generation to store OTC server-side only
-- [ ] Remove OTC from API responses to client
-- [ ] Implement OTC verification endpoint
-- [ ] Update file retrieval to require OTC verification
+### Frontend
+- [x] Add `appwrite` package to `frontend/package.json`
 
-### 6. Backend-only Access to Files
-- [ ] Update file retrieval endpoint to serve files through backend
-- [ ] Implement file streaming through backend API
-- [ ] Add authentication/OTC verification for file access
+## Phase 3: Implement Appwrite Backend Integration
 
-### 7. File Deletion Enforcement
-- [ ] Ensure encrypted files are properly deleted from Appwrite Storage
-- [ ] Implement cleanup on OTC expiration
-- [ ] Verify deletion after print status update
-- [ ] Add error handling for deletion failures
+### Create Appwrite Configuration
+- [x] Create `backend/appwrite.js` with Appwrite client setup
+- [x] Configure environment variables for Appwrite (APPWRITE_ENDPOINT, APPWRITE_PROJECT, APPWRITE_API_KEY) - See `backend/.env.example`
 
-### HENCE THIS IS HOW IT WORKS - 
-- User logs in via Appwrite Auth
+### Update server.js
+- [x] Replace Firebase imports with Appwrite
+- [x] Remove Cloudinary configuration
+- [x] Implement OTC (One-Time Code) storage in Appwrite Database
+- [x] Implement secure file upload to Appwrite Storage
+- [x] Implement file streaming through backend with decryption
+- [x] Implement OTC validation and file deletion after one use
 
-- File is encrypted on client
+### Environment Configuration
+- [x] Create `backend/.env.example` with Appwrite settings
 
-- Encrypted file uploaded to Appwrite Storage
+## Phase 4: Update Frontend for Appwrite Auth
 
-- Backend stores OTC + metadata in Appwrite DB
+- [x] Replace Firebase Auth with Appwrite Auth SDK (`frontend/src/lib/appwrite.js`)
+- [x] Keep client-side encryption with crypto-js (`frontend/src/lib/encryption.js`)
+- [x] Update API calls to use new backend endpoints (`frontend/src/lib/api.js`)
+- [x] Create `frontend/.env.example` with Appwrite settings
 
-- Shopkeeper enters OTC
+## Phase 5: Environment Variables
 
-- Backend validates OTC
+Update `.env` file with:
+```
+# Appwrite Configuration
+APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
+APPWRITE_PROJECT=your_project_id
+APPWRITE_API_KEY=your_api_key
 
-- Backend streams + decrypts file
+# Appwrite Database IDs
+APPWRITE_DATABASE_ID=secure_print
+APPWRITE_COLLECTION_OTC=one_time_codes
+APPWRITE_COLLECTION_FILES=files
+APPWRITE_BUCKET_ID=secure_files
 
-- File is printed once
+# Encryption (shared secret for client-server encryption)
+ENCRYPTION_KEY=your_32_byte_encryption_key
+```
 
-- Backend deletes file
+## Additional Documentation
 
-- OTC marked as used
+- [x] Create `SECURITY_MIGRATION.md` with complete migration summary
+
+## Final Architecture
+
+Frontend (Render) → Backend API (Render) → Appwrite Cloud (Auth, Storage, DB)
+
+---
+
+## ✅ ALL TASKS COMPLETED
+
+The security enforcement is now complete. The system has been migrated from insecure Cloudinary/Firebase to secure Appwrite Cloud backend with:
+
+- ✅ No Cloudinary usage
+- ✅ No Firebase usage  
+- ✅ Private file storage (no public URLs)
+- ✅ Client-side AES-256-GCM encryption
+- ✅ Server-side OTC validation
+- ✅ Backend file streaming (no direct client access)
+- ✅ File deletion after one use
+- ✅ OTC invalidation after use
+
+See `SECURITY_MIGRATION.md` for setup instructions.
+

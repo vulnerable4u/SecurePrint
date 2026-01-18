@@ -1,43 +1,48 @@
 # Tech Stack Report
 
 ## Overview
-This project is a full-stack web application consisting of a React-based frontend and a Node.js/Express backend. It appears to be a secure print service that allows users to upload files, generate one-time codes (OTC) for access, and manage file printing with expiration and deletion features.
+This project is a full-stack web application consisting of a React-based frontend and a Node.js/Express backend. It is a secure print service that allows users to upload files, generate one-time codes (OTC) for access, and manage file printing with encryption and auto-deletion features.
 
 ## Tech Stack
 
 ### Frontend
-- **React**: A JavaScript library for building user interfaces.
-- **TypeScript**: A typed superset of JavaScript that compiles to plain JavaScript.
-- **Vite**: A fast build tool and development server for modern web projects.
-- **Tailwind CSS**: A utility-first CSS framework for rapid UI development.
-- **shadcn-ui**: A collection of reusable UI components built on top of Radix UI and styled with Tailwind CSS.
-- **Radix UI**: A set of low-level UI primitives for building high-quality, accessible design systems.
-- **React Router DOM**: Declarative routing for React applications.
-- **React Hook Form**: Performant, flexible forms with easy validation.
-- **Zod**: TypeScript-first schema declaration and validation library.
-- **Framer Motion**: A production-ready motion library for React.
-- **Lucide React**: Beautiful & consistent icon toolkit made by the creators of Tailwind CSS.
-- **React Query**: Powerful data synchronization for React.
-- **Next Themes**: An abstraction for themes in React applications.
-- **Firebase**: For client-side Firebase integration (authentication, etc.).
+- **React**: A JavaScript library for building user interfaces (v18.3.1).
+- **TypeScript**: A typed superset of JavaScript that compiles to plain JavaScript (v5.8.3).
+- **Vite**: A fast build tool and development server for modern web projects (v5.4.19).
+- **Tailwind CSS**: A utility-first CSS framework for rapid UI development (v3.4.17).
+- **shadcn/ui**: A collection of reusable UI components built on top of Radix UI and styled with Tailwind CSS.
+- **Radix UI**: A set of low-level UI primitives for building high-quality, accessible design systems (multiple components including Dialog, Dropdown Menu, Toast, Tabs, etc.).
+- **React Router DOM**: Declarative routing for React applications (v6.30.1).
+- **React Hook Form**: Performant, flexible forms with easy validation (v7.61.1).
+- **Zod**: TypeScript-first schema declaration and validation library (v3.25.76).
+- **Framer Motion**: A production-ready motion library for React (v11.18.2).
+- **Lucide React**: Beautiful & consistent icon toolkit (v0.462.0).
+- **TanStack Query (React Query)**: Powerful data synchronization and state management for React (v5.83.0).
+- **Next Themes**: Theme abstraction for React applications (v0.3.0).
+- **Appwrite**: Backend-as-a-Service platform for authentication, database, and storage (v13.0.0).
+- **Web Crypto API**: Native browser API for AES-256-GCM encryption (no external crypto library).
+- **Sonner**: Modern toast notifications for React (v1.7.4).
+- **Recharts**: Composable charting library for React (v2.15.4).
+- **date-fns**: Modern JavaScript date utility library (v3.6.0).
 
 ### Backend
-- **Node.js**: JavaScript runtime built on Chrome's V8 JavaScript engine.
-- **Express.js**: Fast, unopinionated, minimalist web framework for Node.js.
-- **Firebase Admin SDK**: Server-side Firebase SDK for accessing Firestore database.
-- **Cloudinary**: Cloud-based image and video management service (used for file uploads).
-- **Multer**: Middleware for handling multipart/form-data, primarily used for uploading files.
-- **UUID**: For generating unique identifiers.
-- **CORS**: Middleware for enabling Cross-Origin Resource Sharing.
-- **Dotenv**: Module for loading environment variables from a .env file.
+- **Node.js**: JavaScript runtime built on Chrome's V8 JavaScript engine (v20+).
+- **Express.js**: Fast, unopinionated, minimalist web framework for Node.js (v4.19.2).
+- **Appwrite SDK**: Server-side SDK for Appwrite database and storage (v13.0.0).
+- **Multer**: Middleware for handling multipart/form-data, used for file uploads (v2.0.2).
+- **UUID**: For generating unique identifiers (v9.0.1).
+- **CORS**: Middleware for enabling Cross-Origin Resource Sharing (v2.8.5).
+- **Dotenv**: Module for loading environment variables from a .env file (v16.4.5).
+- **Native Crypto**: Node.js built-in crypto module for AES-256-GCM encryption.
 
 ### Development Tools
-- **ESLint**: Tool for identifying and reporting on patterns in ECMAScript/JavaScript code.
-- **TypeScript ESLint**: ESLint rules for TypeScript.
-- **PostCSS**: Tool for transforming CSS with JavaScript.
-- **Autoprefixer**: PostCSS plugin to parse CSS and add vendor prefixes automatically.
-- **Nodemon**: Utility that monitors for changes in source code and automatically restarts the server.
+- **ESLint**: Tool for identifying and reporting on patterns in ECMAScript/JavaScript code (v9.32.0).
+- **TypeScript ESLint**: ESLint rules for TypeScript (v8.38.0).
+- **PostCSS**: Tool for transforming CSS with JavaScript (v8.5.6).
+- **Autoprefixer**: PostCSS plugin to parse CSS and add vendor prefixes automatically (v10.4.21).
+- **Nodemon**: Utility that monitors for changes in source code and automatically restarts the server (v3.1.0).
 - **Bun**: Fast JavaScript runtime and package manager (indicated by bun.lockb file).
+- **concurrently**: Run multiple commands simultaneously (v8.2.2).
 
 ## How to Use the Project
 
@@ -64,18 +69,12 @@ This project is a full-stack web application consisting of a React-based fronten
    - Create a `.env` file in the `backend/` directory
    - Add the following variables (replace with your actual values):
      ```
-     CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
-     CLOUDINARY_API_KEY=your_cloudinary_api_key
-     CLOUDINARY_API_SECRET=your_cloudinary_api_secret
-     FIREBASE_PROJECT_ID=your_firebase_project_id
-     FIREBASE_PRIVATE_KEY_ID=your_private_key_id
-     FIREBASE_PRIVATE_KEY=your_private_key
-     FIREBASE_CLIENT_EMAIL=your_client_email
-     FIREBASE_CLIENT_ID=your_client_id
-     FIREBASE_AUTH_URI=https://accounts.google.com/o/oauth2/auth
-     FIREBASE_TOKEN_URI=https://oauth2.googleapis.com/token
-     FIREBASE_AUTH_PROVIDER_X509_CERT_URL=https://www.googleapis.com/oauth2/v1/certs
-     FIREBASE_CLIENT_X509_CERT_URL=your_client_x509_cert_url
+     # Appwrite Configuration
+     APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
+     APPWRITE_PROJECT=your_project_id
+     APPWRITE_DATABASE_ID=secure_print
+     APPWRITE_COLLECTION_OTC=one_time_codes
+     APPWRITE_BUCKET_ID=secure_files
      ```
 
 ### Running the Application
@@ -112,24 +111,65 @@ npm run dev:frontend
 ### API Endpoints
 The backend provides the following API endpoints:
 
-- `POST /api/upload`: Upload a file and generate an OTC
-- `GET /api/file/:otc`: Retrieve file information using OTC
-- `POST /api/file/:id/status`: Update file status (printing/printed)
+- `POST /api/upload`: Upload an encrypted file and generate a 6-digit OTC (One-Time Code)
+- `POST /api/retrieve`: Validate OTC and retrieve/decrypt file (OTC becomes invalid after retrieval)
+- `POST /api/validate-otc`: Check if an OTC is valid without retrieving the file
+- `GET /api/health`: Health check endpoint
 
 ### Project Structure
-- `src/`: Frontend source code
-  - `components/`: Reusable UI components
-  - `pages/`: Page components
-  - `hooks/`: Custom React hooks
-  - `lib/`: Utility functions
-- `public/`: Static assets
-- `src/server.js`: Backend Express server
-- `src/firebaseAdmin.js`: Firebase Admin SDK configuration
+```
+secure-print-flow/
+├── backend/
+│   ├── appwrite.js      # Appwrite SDK configuration (client, databases, storage)
+│   ├── server.js        # Express server with API routes
+│   └── package.json
+├── frontend/
+│   ├── src/
+│   │   ├── components/  # Reusable UI components (shadcn/ui, theme-toggle, etc.)
+│   │   ├── pages/       # Page components (Home, Login, Register)
+│   │   ├── hooks/       # Custom React hooks (useAuth)
+│   │   ├── lib/         # Utility functions (api.js, appwrite.js, encryption.ts)
+│   │   └── main.tsx     # Application entry point
+│   └── package.json
+├── package.json         # Root package.json with concurrently scripts
+└── report.md
+```
 
 ### Additional Commands
 - `npm run lint`: Run ESLint for code linting
 - `npm run build:dev`: Build for development mode
 
+## Security Features
+
+### End-to-End Encryption
+- **AES-256-GCM**: All files are encrypted using industry-standard AES-256-GCM encryption
+- **Client-side Encryption**: Files are encrypted in the browser before upload using the native Web Crypto API
+- **Server-side Decryption**: Files are decrypted on retrieval with the user's encryption key
+- **Format**: IV (16 bytes) + Authentication Tag (16 bytes) + Ciphertext
+
+### One-Time Code (OTC) System
+- **6-digit numeric codes**: Each uploaded file gets a unique 6-digit code
+- **Single-use**: Each OTC can only be used once
+- **Auto-deletion**: File is deleted from storage immediately after successful retrieval
+- **Validation endpoint**: Check OTC validity without consuming it
+
 ## Deployment
-The project can be deployed using various platforms. For Lovable (as mentioned in README), simply open the Lovable project and click Share -> Publish.
+
+### Frontend Deployment (Vite)
+The frontend can be deployed to any static hosting service:
+- Vercel, Netlify, Cloudflare Pages, GitHub Pages, etc.
+- Build command: `npm run build:frontend`
+
+### Backend Deployment (Node.js/Express)
+The backend requires a Node.js environment (v20+):
+- Configure environment variables for Appwrite
+- Use a process manager like PM2 for production
+- Ensure the server is accessible on port 3001
+
+### Appwrite Cloud
+- Create a free account at [cloud.appwrite.io](https://cloud.appwrite.io)
+- Create a new project
+- Create a database with two collections: `one_time_codes` and `files`
+- Create a storage bucket with private permissions
+- Update environment variables with your Appwrite credentials
 

@@ -1,4 +1,4 @@
-# Secure Print Flow
+# Secure Print 
 
 A secure file sharing application that allows users to upload encrypted files and share them via one-time codes (OTC). Files are encrypted client-side using AES-256-GCM and can only be retrieved once before being automatically deleted.
 

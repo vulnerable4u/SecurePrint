@@ -1,9 +1,10 @@
+
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Shield, Lock, Printer, ArrowRight, FileKey, Users, Zap } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
-import { login, isLoggedIn } from '../lib/appwrite';
+import { login, logout, isLoggedIn } from '../lib/appwrite';
 
 function Home() {
   const navigate = useNavigate();
@@ -27,7 +28,7 @@ function Home() {
 
   const handleGetStarted = () => {
     if (isAuthenticated) {
-      navigate('/dashboard');
+      navigate('/upload');
     } else {
       navigate('/login');
     }
@@ -50,8 +51,8 @@ if (loading) {
   const features = [
     {
       icon: Lock,
-      title: 'End-to-End Encryption',
-      description: 'Your documents are encrypted before upload and can only be decrypted with the One-Time Access Code.',
+      title: 'Server-Side Encryption',
+      description: 'Your documents are encrypted on the server using AES-256-GCM before storing in Appwrite.',
       color: 'text-blue-600',
       bg: 'bg-blue-100',
     },
@@ -82,7 +83,7 @@ if (loading) {
     {
       step: 1,
       title: 'Upload Your File',
-      description: 'Drag and drop any document. It\'s encrypted client-side before upload.',
+      description: 'Drag and drop any document. It will be encrypted on the server.',
     },
     {
       step: 2,
@@ -92,7 +93,7 @@ if (loading) {
     {
       step: 3,
       title: 'Share & Print',
-      description: 'Recipient enters the code, decrypts, views, and prints the document once.',
+      description: 'Recipient enters the code, downloads, views, and prints the document once.',
     },
   ];
 
@@ -116,16 +117,23 @@ if (loading) {
               <a href="#how-it-works" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 How It Works
               </a>
+              <Link to="/retrieve" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Retrieve File
+              </Link>
             </nav>
 
             <div className="flex items-center gap-3">
               {isAuthenticated ? (
                 <>
-                  <Button variant="ghost" asChild>
-                    <Link to="/dashboard">Dashboard</Link>
-                  </Button>
                   <Button variant="gradient" onClick={() => navigate('/upload')}>
                     Upload File
+                  </Button>
+                  <Button variant="outline" onClick={async () => {
+                    await logout();
+                    setIsAuthenticated(false);
+                    navigate('/');
+                  }}>
+                    Logout
                   </Button>
                 </>
               ) : (
@@ -244,7 +252,7 @@ if (loading) {
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Button size="xl" variant="secondary" onClick={handleGetStarted} className="w-full sm:w-auto">
-              {isAuthenticated ? 'Go to Dashboard' : 'Create Free Account'}
+              {isAuthenticated ? 'Upload a File' : 'Create Free Account'}
               <ArrowRight className="ml-2 w-5 h-5" />
             </Button>
           </div>

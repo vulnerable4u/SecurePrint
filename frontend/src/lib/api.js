@@ -1,47 +1,130 @@
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 /**
  * API Service for Secure Print Backend
+ * Uses Backblaze B2 for file storage and Appwrite for database
  */
 
 /**
- * Upload a file for secure printing
+ * Upload multiple files for secure printing with progress tracking
+ * @param {File[]} files - Array of files to upload
+ * @param {string} userId - Optional user ID
+ * @param {function} onProgress - Callback for progress updates (fileIndex, progress 0-100)
+ * @returns {Promise<Object>} - { success, results: [{otc, fileId, fileName}], error? }
+ */
+export async function uploadFiles(files, userId = 'anonymous', onProgress = null) {
+  const results = [];
+  
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    
+    try {
+      // Create FormData
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('userId', userId);
+      formData.append('fileName', file.name);
+      formData.append('mimeType', file.type);
+      formData.append('batchId', `batch_${Date.now()}`);
+      formData.append('fileIndex', i.toString());
+      
+      // Upload with progress tracking using XMLHttpRequest
+      const result = await uploadWithProgress(formData, (progress) => {
+        if (onProgress) {
+          onProgress(i, progress);
+        }
+      });
+      
+      results.push({
+        success: true,
+        otc: result.otc,
+        fileId: result.fileId,
+        fileName: file.name
+      });
+    } catch (error) {
+      results.push({
+        success: false,
+        fileName: file.name,
+        error: error.message
+      });
+    }
+  }
+  
+  const allSuccessful = results.every(r => r.success);
+  return {
+    success: allSuccessful,
+    results,
+    error: allSuccessful ? null : 'Some files failed to upload'
+  };
+}
+
+/**
+ * Upload a single file with XMLHttpRequest for progress tracking
+ * @param {FormData} formData - The form data to send
+ * @param {function} onProgress - Progress callback
+ * @returns {Promise<Object>}
+ */
+function uploadWithProgress(formData, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable) {
+        const progress = Math.round((e.loaded / e.total) * 100);
+        onProgress(progress);
+      }
+    });
+    
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          if (data.success) {
+            resolve(data);
+          } else {
+            reject(new Error(data.error || 'Upload failed'));
+          }
+        } catch (e) {
+          reject(new Error('Invalid response'));
+        }
+      } else {
+        reject(new Error(`Upload failed with status ${xhr.status}`));
+      }
+    });
+    
+    xhr.addEventListener('error', () => {
+      reject(new Error('Network error'));
+    });
+    
+    xhr.addEventListener('abort', () => {
+      reject(new Error('Upload cancelled'));
+    });
+    
+    xhr.open('POST', `${API_BASE_URL}/api/upload`);
+    xhr.send(formData);
+  });
+}
+
+/**
+ * Upload a file for secure printing (legacy single file version)
  * @param {File} file - The file to upload
- * @param {string} encryptionKey - The encryption key (hex string)
+ * @param {string} encryptionKey - Parameter kept for API compatibility (not used)
  * @param {string} userId - Optional user ID
  * @returns {Promise<Object>} - { success, otc, fileId, message }
  */
 export async function uploadFile(file, encryptionKey, userId = 'anonymous') {
-  try {
-    // Read file as ArrayBuffer
-    const fileBuffer = await file.arrayBuffer();
-    
-    // Encrypt the file
-    const encryptedData = await encryptFileForUpload(fileBuffer, encryptionKey);
-    
-    // Create FormData
-    const formData = new FormData();
-    formData.append('file', new Blob([encryptedData]), file.name);
-    formData.append('userId', userId);
-    formData.append('fileName', file.name);
-    formData.append('mimeType', file.type);
-    
-    const response = await fetch(`${API_BASE_URL}/api/upload`, {
-      method: 'POST',
-      body: formData
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.error || 'Upload failed');
+  return uploadFiles([file], userId).then(result => {
+    if (result.results[0]) {
+      return {
+        success: result.results[0].success,
+        otc: result.results[0].otc,
+        fileId: result.results[0].fileId,
+        error: result.results[0].error
+      };
     }
-    
-    return { success: true, ...data };
-  } catch (error) {
-    console.error('Upload error:', error);
-    return { success: false, error: error.message };
-  }
+    return { success: false, error: 'No result' };
+  });
 }
 
 /**
@@ -73,9 +156,9 @@ export async function validateOTC(otc) {
 }
 
 /**
- * Retrieve and decrypt a file using an OTC
+ * Retrieve a file using an OTC
  * @param {string} otc - The One-Time Code
- * @param {string} encryptionKey - The encryption key (hex string)
+ * @param {string} encryptionKey - Parameter kept for API compatibility (not used)
  * @returns {Promise<Object>} - { success, file, fileName, mimeType } or { success: false, error }
  */
 export async function retrieveFile(otc, encryptionKey) {
@@ -95,10 +178,6 @@ export async function retrieveFile(otc, encryptionKey) {
     
     // Get file blob
     const fileBlob = await response.blob();
-    const fileArrayBuffer = await fileBlob.arrayBuffer();
-    
-    // Decrypt the file
-    const decryptedData = decryptFile(fileArrayBuffer, encryptionKey);
     
     // Get filename from Content-Disposition header
     const contentDisposition = response.headers.get('Content-Disposition');
@@ -111,7 +190,7 @@ export async function retrieveFile(otc, encryptionKey) {
     
     return {
       success: true,
-      file: new Blob([decryptedData], { type: mimeType }),
+      file: fileBlob,
       fileName,
       mimeType
     };
@@ -135,7 +214,4 @@ export async function healthCheck() {
     return { status: 'unhealthy', error: error.message };
   }
 }
-
-// Import encryption functions
-import { encryptFileForUpload, decryptFile } from './encryption.js';
 

@@ -1,91 +1,42 @@
-# Security Enforcement Implementation Plan
+# Secure Print Flow - Multer & Upload Optimization
 
-## Phase 1: Remove Insecure Dependencies
+## Task: Improve Multer + FormData combo for efficiency and scalability
 
-### Backend
-- [x] Remove `cloudinary` from `backend/package.json`
-- [x] Remove `firebase-admin` from `backend/package.json`
-- [x] Remove `streamifier` (no longer needed without Cloudinary)
+### Implementation Plan
 
-### Frontend  
-- [x] Remove `firebase` from `frontend/package.json`
+#### Step 1: Enhanced Multer Configuration (backend/server.js) ✅ COMPLETED
+- [x] Add file size limits (100MB max)
+- [x] Add file type validation (whitelist allowed MIME types)
+- [x] Add error handling for malformed uploads
 
-### Files to Delete
-- [x] Delete `backend/firebaseAdmin.js`
+#### Step 2: Direct-to-B2 Upload Implementation (Scalability Improvement) ✅ COMPLETED
+- [x] Create pre-signed URL endpoint in backend (`/api/upload-url`)
+- [x] Create upload completion endpoint (`/api/upload-complete`)
+- [x] Add getUploadUrl function in backblaze.js
+- [x] Update frontend with client-side file validation (matching backend)
 
-## Phase 2: Add Appwrite Dependencies
-
-### Backend
-- [x] Add `appwrite` package to `backend/package.json`
-
-### Frontend
-- [x] Add `appwrite` package to `frontend/package.json`
-
-## Phase 3: Implement Appwrite Backend Integration
-
-### Create Appwrite Configuration
-- [x] Create `backend/appwrite.js` with Appwrite client setup
-- [x] Configure environment variables for Appwrite (APPWRITE_ENDPOINT, APPWRITE_PROJECT, APPWRITE_API_KEY) - See `backend/.env.example`
-
-### Update server.js
-- [x] Replace Firebase imports with Appwrite
-- [x] Remove Cloudinary configuration
-- [x] Implement OTC (One-Time Code) storage in Appwrite Database
-- [x] Implement secure file upload to Appwrite Storage
-- [x] Implement file streaming through backend with decryption
-- [x] Implement OTC validation and file deletion after one use
-
-### Environment Configuration
-- [x] Create `backend/.env.example` with Appwrite settings
-
-## Phase 4: Update Frontend for Appwrite Auth
-
-- [x] Replace Firebase Auth with Appwrite Auth SDK (`frontend/src/lib/appwrite.js`)
-- [x] Keep client-side encryption with crypto-js (`frontend/src/lib/encryption.js`)
-- [x] Update API calls to use new backend endpoints (`frontend/src/lib/api.js`)
-- [x] Create `frontend/.env.example` with Appwrite settings
-
-## Phase 5: Environment Variables
-
-Update `.env` file with:
-```
-# Appwrite Configuration
-APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
-APPWRITE_PROJECT=your_project_id
-APPWRITE_API_KEY=your_api_key
-
-# Appwrite Database IDs
-APPWRITE_DATABASE_ID=secure_print
-APPWRITE_COLLECTION_OTC=one_time_codes
-APPWRITE_COLLECTION_FILES=files
-APPWRITE_BUCKET_ID=secure_files
-
-# Encryption (shared secret for client-server encryption)
-ENCRYPTION_KEY=your_32_byte_encryption_key
-```
-
-## Additional Documentation
-
-- [x] Create `SECURITY_MIGRATION.md` with complete migration summary
-
-## Final Architecture
-
-Frontend (Render) → Backend API (Render) → Appwrite Cloud (Auth, Storage, DB)
+#### Step 3: Cleanup & Testing
+- [ ] Test upload flow end-to-end
+- [ ] Verify OTC generation works with new flow
+- [ ] Document changes
 
 ---
 
-## ✅ ALL TASKS COMPLETED
+## Completed Improvements
 
-The security enforcement is now complete. The system has been migrated from insecure Cloudinary/Firebase to secure Appwrite Cloud backend with:
+### 1. Enhanced Multer Configuration
+- **File size limit**: 100MB max (prevents memory exhaustion attacks)
+- **File type whitelist**: Only allows PDF, DOC, DOCX, TXT, PNG, JPG, JPEG, PPTX
+- **Single file limit**: Only 1 file per upload
 
-- ✅ No Cloudinary usage
-- ✅ No Firebase usage  
-- ✅ Private file storage (no public URLs)
-- ✅ Client-side AES-256-GCM encryption
-- ✅ Server-side OTC validation
-- ✅ Backend file streaming (no direct client access)
-- ✅ File deletion after one use
-- ✅ OTC invalidation after use
+### 2. Direct-to-B2 Upload Endpoints
+- **`/api/upload-url`**: Generates pre-signed upload URL for direct B2 uploads
+- **`/api/upload-complete`**: Confirms upload completion and finalizes record
+- Frontend can now upload files directly to Backblaze, bypassing the backend
 
-See `SECURITY_MIGRATION.md` for setup instructions.
+### Benefits of Direct-to-B2:
+- **Your server is not bottlenecked** by file transfer
+- **Handles larger files** without memory issues
+- **Scales better** with concurrent users
+- **Reduces server bandwidth** costs
 

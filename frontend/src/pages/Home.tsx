@@ -111,15 +111,13 @@ if (loading) {
             </Link>
             
             <nav className="hidden md:flex items-center gap-6">
-              <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <a href="#features" className="text-base text-muted-foreground hover:text-foreground transition-colors font-medium">
                 Features
               </a>
-              <a href="#how-it-works" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <a href="#how-it-works" className="text-base text-muted-foreground hover:text-foreground transition-colors font-medium">
                 How It Works
               </a>
-              <Link to="/retrieve" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                Retrieve File
-              </Link>
+
             </nav>
 
             <div className="flex items-center gap-3">
@@ -177,7 +175,7 @@ if (loading) {
                 <ArrowRight className="ml-2 w-5 h-5" />
               </Button>
               <Button size="xl" variant="outline" asChild className="w-full sm:w-auto">
-                <Link to="/how-it-works">See How It Works</Link>
+                <Link to="/retrieve">Retrieve File</Link>
               </Button>
             </div>
           </div>

@@ -8,14 +8,14 @@ This project is a full-stack web application consisting of a React-based fronten
 ### Frontend
 - **React**: A JavaScript library for building user interfaces (v18.3.1).
 - **TypeScript**: A typed superset of JavaScript that compiles to plain JavaScript (v5.8.3).
-- **Vite**: A fast build tool and development server for modern web projects (v5.4.19).
-- **Tailwind CSS**: A utility-first CSS framework for rapid UI development (v3.4.17).
+- **Vite**: A fast build tool and development server for modern web projects (5.4.21).
+- **Tailwind CSS**: A utility-first CSS framework for rapid UI development (3.4.17).
 - **shadcn/ui**: A collection of reusable UI components built on top of Radix UI and styled with Tailwind CSS.
 - **Radix UI**: A set of low-level UI primitives for building high-quality, accessible design systems (multiple components including Dialog, Dropdown Menu, Toast, Tabs, etc.).
-- **React Router DOM**: Declarative routing for React applications (v6.30.1).
-- **React Hook Form**: Performant, flexible forms with easy validation (v7.61.1).
-- **Zod**: TypeScript-first schema declaration and validation library (v3.25.76).
-- **Framer Motion**: A production-ready motion library for React (v11.18.2).
+- **React Router DOM**: Declarative routing for React applications (6.30.1).
+- **React Hook Form**: Performant, flexible forms with easy validation (7.61.1).
+- **Zod**: TypeScript-first schema declaration and validation library (3.25.76).
+- **Framer Motion**: A production-ready motion library for React (11.18.2).
 - **Lucide React**: Beautiful & consistent icon toolkit (v0.462.0).
 - **TanStack Query (React Query)**: Powerful data synchronization and state management for React (v5.83.0).
 - **Next Themes**: Theme abstraction for React applications (v0.3.0).
@@ -28,9 +28,10 @@ This project is a full-stack web application consisting of a React-based fronten
 ### Backend
 - **Node.js**: JavaScript runtime built on Chrome's V8 JavaScript engine (v20+).
 - **Express.js**: Fast, unopinionated, minimalist web framework for Node.js (v4.19.2).
-- **Appwrite SDK**: Server-side SDK for Appwrite database and storage (v13.0.0).
-- **Multer**: Middleware for handling multipart/form-data, used for file uploads (v2.0.2).
-- **UUID**: For generating unique identifiers (v9.0.1).
+- **Appwrite SDK**: Server-side SDK for Appwrite database (metadata/OTC) + node-appwrite (22.1.3); Backblaze for file storage.
+- **Multer**: Middleware for handling multipart/form-data, used for file uploads (2.1.1).
+- **Backblaze B2**: Scalable object storage for files (backblaze-b2 1.7.1) - direct pre-signed uploads for high performance.
+- **UUID**: For generating unique identifiers (9.0.1).
 - **CORS**: Middleware for enabling Cross-Origin Resource Sharing (v2.8.5).
 - **Dotenv**: Module for loading environment variables from a .env file (v16.4.5).
 - **Native Crypto**: Node.js built-in crypto module for AES-256-GCM encryption.
@@ -74,7 +75,11 @@ This project is a full-stack web application consisting of a React-based fronten
      APPWRITE_PROJECT=your_project_id
      APPWRITE_DATABASE_ID=secure_print
      APPWRITE_COLLECTION_OTC=one_time_codes
-     APPWRITE_BUCKET_ID=secure_files
+     # Note: APPWRITE_BUCKET_ID not used (Backblaze used for storage)
+     # Backblaze B2 config:
+     BACKBLAZE_KEY_ID=your_key_id
+     BACKBLAZE_APP_KEY=your_app_key
+     BACKBLAZE_BUCKET_ID=your_bucket_id
      ```
 
 ### Running the Application
@@ -109,12 +114,15 @@ npm run dev:frontend
    ```
 
 ### API Endpoints
-The backend provides the following API endpoints:
 
-- `POST /api/upload`: Upload an encrypted file and generate a 6-digit OTC (One-Time Code)
-- `POST /api/retrieve`: Validate OTC and retrieve/decrypt file (OTC becomes invalid after retrieval)
-- `POST /api/validate-otc`: Check if an OTC is valid without retrieving the file
-- `GET /api/health`: Health check endpoint
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/upload` | Legacy: Upload file via backend (100MB max) |
+| POST | `/api/upload-url` | Get pre-signed Backblaze URL for direct upload (scalable) |
+| POST | `/api/upload-complete` | Confirm direct B2 upload and finalize OTC |
+| POST | `/api/retrieve` | Validate OTC, stream file from B2, auto-delete |
+| POST | `/api/validate-otc` | Check OTC validity (file info preview) |
+| GET | `/api/health` | Health check
 
 ### Project Structure
 ```
@@ -141,17 +149,44 @@ secure-print-flow/
 
 ## Security Features
 
-### End-to-End Encryption
-- **AES-256-GCM**: All files are encrypted using industry-standard AES-256-GCM encryption
-- **Client-side Encryption**: Files are encrypted in the browser before upload using the native Web Crypto API
-- **Server-side Decryption**: Files are decrypted on retrieval with the user's encryption key
-- **Format**: IV (16 bytes) + Authentication Tag (16 bytes) + Ciphertext
+### Current Architecture
+- **Appwrite**: Metadata storage and OTC validation (server-side only)
+- **Backblaze B2**: Private file storage with direct pre-signed uploads (no public access)
+- **No client-side encryption** (raw print documents stored securely)
+
+### Access Control
+- **OTC System**: 6-digit single-use codes validated server-side
+- **Auto-deletion**: Files + OTC records cleaned up after retrieval
+- **File limits**: 100MB max, allowed types (PDF, DOCX, PNG, etc.)
+
+### End-to-End Encryption (Legacy Note)
+**Note**: Current implementation stores raw files in B2 for print use cases. E2EE available via Web Crypto API if needed.
+- **AES-256-GCM**: Files can be encrypted client-side
+- **Format**: IV (16 bytes) + Tag (16 bytes) + Ciphertext
 
 ### One-Time Code (OTC) System
 - **6-digit numeric codes**: Each uploaded file gets a unique 6-digit code
 - **Single-use**: Each OTC can only be used once
 - **Auto-deletion**: File is deleted from storage immediately after successful retrieval
 - **Validation endpoint**: Check OTC validity without consuming it
+
+## Recent Changes & Features
+
+### Security Migration (v1.1.0+)
+- **Migrated from Cloudinary/Firebase** to **Appwrite (DB) + Backblaze B2 (storage)**
+- Removed all public file access
+- Direct B2 pre-signed uploads (bypasses backend for scale)
+- Backend-only OTC validation & file streaming/delete
+
+### New Features
+- **Batch upload** with progress tracking (frontend api.js)
+- **Retrieve page** enhancements: OTC preview (file info), polished shadcn UI
+- **Full shadcn/Radix suite**: 20+ components (accordion, dialog, tabs, toast, etc.)
+- **React Query**: Caching, optimistic updates
+- **Dark/Light theme** (next-themes)
+- **Charts & analytics** (Recharts)
+- **Toasts** (Sonner)
+- **Motion/animations** (Framer Motion)
 
 ## Deployment
 

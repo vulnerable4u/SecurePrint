@@ -1,344 +1,225 @@
-
 import dotenv from 'dotenv';
-
-// Load environment variables from .env file FIRST
 dotenv.config();
 
-// Backblaze imports
-import { uploadFile as b2Upload, downloadFile as b2Download, deleteFile as b2Delete, getUploadUrl } from './backblaze.js';
-
-// Appwrite imports (only databases for metadata)
+import { uploadFile as b2Upload, downloadFile as b2Download, deleteFile as b2Delete } from './backblaze.js';
 import { databases, APPWRITE_CONFIG } from './appwrite.js';
-import { Query } from 'node-appwrite';
+import { Query, ID } from 'node-appwrite';
+import archiver from 'archiver';
+import crypto from 'node:crypto';
 
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import { v4 as uuidv4 } from 'uuid';
+import rateLimit from 'express-rate-limit';
 
 const app = express();
-const port = 3001;
+const port = process.env.PORT || 3001;
 
-// Configure multer with security limits
 const ALLOWED_MIME_TYPES = [
-  'application/pdf',                                      // PDF
-  'application/msword',                                   // DOC
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
-  'text/plain',                                           // TXT
-  'image/png',                                            // PNG
-  'image/jpeg',                                           // JPG/JPEG
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation' // PPTX
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain',
+  'image/png',
+  'image/jpeg',
 ];
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: {
-    fileSize: MAX_FILE_SIZE,
-    files: 1
-  },
+  limits: { fileSize: MAX_FILE_SIZE, files: 5 },
   fileFilter: (req, file, cb) => {
-    if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error(`Invalid file type. Allowed: ${ALLOWED_MIME_TYPES.join(', ')}`), false);
-    }
-  }
+    if (ALLOWED_MIME_TYPES.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Invalid file type'), false);
+  },
 });
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Helper: Generate OTC (One-Time Code)
-function generateOTC() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
+// Rate limit /api/retrieve: 10/min/IP
+const retrieveLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: 'Too many requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
-// API Routes
+const OTC_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
-/**
- * POST /api/upload
- * Upload file with OTC generation
- */
-app.post('/api/upload', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+async function generateUniqueOTC() {
+  while (true) {
+    const bytes = crypto.randomBytes(6);
+    let otc = '';
+    for (let i = 0; i < 6; i++) {
+      otc += OTC_CHARS[bytes[i] % OTC_CHARS.length];
     }
-
-    const fileId = uuidv4();
-    const otc = generateOTC();
-
-    // Upload file directly to Backblaze B2 (no encryption)
-    // Note: fileId here is used as the filename in Backblaze
-    const b2Result = await b2Upload(req.file.buffer, fileId, req.file.mimetype);
-
-    // Store OTC and metadata in Appwrite Database
-    // We store the fileId (UUID) as filename reference and the B2 fileId for retrieval
-    await databases.createDocument(
+    const res = await databases.listDocuments(
       APPWRITE_CONFIG.databaseId,
       APPWRITE_CONFIG.collectionOTC,
-      uuidv4(),
-      {
-        otc: otc,
-        fileId: fileId,  // This is the filename in B2
-        b2FileId: b2Result.fileId,  // This is the actual B2 file ID
-        fileName: req.file.originalname,
-        fileSize: req.file.size,
-        mimeType: req.file.mimetype,
-        createdAt: new Date().toISOString(),
-        used: false,
-        userId: req.body.userId || 'anonymous'
-      }
+      [Query.equal('otc', [otc])]
     );
+    if (res.total === 0) return otc;
+  }
+}
 
-    res.json({
-      success: true,
-      otc: otc,
-      fileId: fileId,
-      message: 'File uploaded securely. Share the OTC code for one-time access.'
+// POST /api/upload - 1-5 files under one OTC
+app.post('/api/upload', upload.array('files', 5), async (req, res) => {
+  const b2FileIds = [];
+  try {
+    const files = req.files;
+    if (!files?.length) return res.status(400).json({ error: 'No files uploaded' });
+    if (files.length > 5) return res.status(400).json({ error: 'Max 5 files' });
+
+    const fileNames = [];
+    const fileSizes = [];
+    const mimeTypes = [];
+
+    for (const file of files) {
+      const b2Result = await b2Upload(file.buffer, file.originalname, file.mimetype);
+      b2FileIds.push(b2Result.fileId);
+      fileNames.push(file.originalname);
+      fileSizes.push(file.size);
+      mimeTypes.push(file.mimetype);
+    }
+
+    // Validate arrays match
+    const len = files.length;
+    if (b2FileIds.length !== len || fileNames.length !== len || fileSizes.length !== len || mimeTypes.length !== len) {
+      throw new Error('Metadata array mismatch');
+    }
+
+    const otc = await generateUniqueOTC();
+    const now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const docId = ID.unique();
+
+    await databases.createDocument(APPWRITE_CONFIG.databaseId, APPWRITE_CONFIG.collectionOTC, docId, {
+      otc,
+      b2FileIds,
+      fileNames,
+      fileSizes,
+      mimeTypes,
+      used: false,
+      createdAt: now,
+      expiresAt,
+      userId: req.body.userId || 'anonymous',
     });
+
+    res.json({ success: true, otc, files: files.length });
   } catch (error) {
+    // Cleanup orphan B2 files
+    for (const b2FileId of b2FileIds) {
+      b2Delete(b2FileId).catch(console.error);
+    }
     console.error('Upload error:', error);
-    res.status(500).json({ error: 'Failed to upload file', details: error.message });
+    res.status(500).json({ error: 'Upload failed', details: error.message });
   }
 });
 
-/**
- * POST /api/retrieve
- * Validate OTC and retrieve file (one-time use only)
- */
-app.post('/api/retrieve', async (req, res) => {
+// POST /api/retrieve - one-time download
+app.post('/api/retrieve', retrieveLimiter, async (req, res) => {
   try {
     const { otc } = req.body;
+    if (!otc) return res.status(400).json({ error: 'OTC required' });
 
-    if (!otc) {
-      return res.status(400).json({ error: 'OTC is required' });
-    }
-
-    // Query Appwrite Database for the OTC
     const response = await databases.listDocuments(
       APPWRITE_CONFIG.databaseId,
       APPWRITE_CONFIG.collectionOTC,
-      [
-        Query.equal('otc', [otc])
-      ]
+      [Query.equal('otc', [otc])]
     );
 
-    if (response.documents.length === 0) {
-      return res.status(404).json({ error: 'Invalid OTC code' });
-    }
+    if (response.documents.length === 0) return res.status(404).json({ error: 'Invalid OTC' });
 
     const doc = response.documents[0];
+    if (doc.used) return res.status(410).json({ error: 'OTC already used' });
+    if (new Date(doc.expiresAt) < new Date()) return res.status(410).json({ error: 'OTC expired' });
 
-    if (doc.used) {
-      return res.status(410).json({ error: 'OTC code has already been used' });
+    const { b2FileIds, fileNames, mimeTypes, $id: docId } = doc;
+    const numFiles = b2FileIds.length;
+
+    let contentBuffer;
+    let contentType;
+    let filename;
+
+    if (numFiles === 1) {
+      contentBuffer = await b2Download(b2FileIds[0]);
+      contentType = mimeTypes[0];
+      filename = fileNames[0];
+    } else {
+      contentBuffer = await new Promise((resolve, reject) => {
+        const chunks = [];
+        const zip = archiver('zip', { zlib: { level: 9 } });
+        zip.on('data', chunk => chunks.push(chunk));
+        zip.on('end', () => resolve(Buffer.concat(chunks)));
+        zip.on('error', reject);
+          for (let i = 0; i < numFiles; i++) {
+                    zip.file(b2Download(b2FileIds[i]), { name: fileNames[i] });      }
+                         zip.finalize();
+      });
+      contentType = 'application/zip';
+      filename = `secure-print-${otc}.zip`;
     }
 
-    // Download file from Backblaze B2
-    // Use fileId as filename since that's what we stored in B2
-    const fileBuffer = await b2Download(null, doc.fileId);
+    // Mark used
+    await databases.updateDocument(APPWRITE_CONFIG.databaseId, APPWRITE_CONFIG.collectionOTC, docId, {
+      used: true,
+      usedAt: new Date().toISOString(),
+    });
 
-    // Mark OTC as used
-    await databases.updateDocument(
-      APPWRITE_CONFIG.databaseId,
-      APPWRITE_CONFIG.collectionOTC,
-      doc.$id,
-      {
-        used: true,
-        usedAt: new Date().toISOString()
-      }
-    );
-
-    // Delete file from Backblaze B2 after one use
-    try {
-      await b2Delete(doc.fileId);
-    } catch (deleteError) {
-      console.error('Failed to delete file:', deleteError);
+    // Cleanup B2 and doc
+    for (const b2FileId of b2FileIds) {
+      b2Delete(b2FileId).catch(console.error);
     }
+    await databases.deleteDocument(APPWRITE_CONFIG.databaseId, APPWRITE_CONFIG.collectionOTC, docId);
 
-    res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${doc.fileName}"`);
-    res.setHeader('Content-Length', fileBuffer.length);
-    res.send(fileBuffer);
+    res.set({
+      'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': contentBuffer.length,
+    });
+    res.send(contentBuffer);
   } catch (error) {
     console.error('Retrieve error:', error);
-    res.status(500).json({ error: 'Failed to retrieve file', details: error.message });
+    res.status(500).json({ error: 'Retrieve failed', details: error.message });
   }
 });
 
-/**
- * POST /api/validate-otc
- * Check if OTC is valid (without retrieving file)
- */
+// POST /api/validate-otc
 app.post('/api/validate-otc', async (req, res) => {
   try {
     const { otc } = req.body;
-
-    if (!otc) {
-      return res.status(400).json({ error: 'OTC is required' });
-    }
+    if (!otc) return res.status(400).json({ valid: false, error: 'OTC required' });
 
     const response = await databases.listDocuments(
       APPWRITE_CONFIG.databaseId,
       APPWRITE_CONFIG.collectionOTC,
-      [
-        Query.equal('otc', [otc])
-      ]
+      [Query.equal('otc', [otc])]
     );
 
-    if (response.documents.length === 0) {
-      return res.status(404).json({ valid: false, error: 'Invalid OTC code' });
-    }
+    if (response.documents.length === 0) return res.status(404).json({ valid: false, error: 'Invalid OTC' });
 
     const doc = response.documents[0];
+    const expired = new Date(doc.expiresAt) < new Date();
 
     res.json({
-      valid: !doc.used,
-      fileName: doc.used ? null : doc.fileName,
-      fileSize: doc.used ? null : doc.fileSize,
-      mimeType: doc.used ? null : doc.mimeType,
-      createdAt: doc.createdAt,
-      alreadyUsed: doc.used
+      valid: !doc.used && !expired,
+      files: doc.b2FileIds?.length || 0,
+      expiresAt: doc.expiresAt,
     });
   } catch (error) {
-    console.error('Validation error:', error);
+    console.error('Validate error:', error);
     res.status(500).json({ valid: false, error: 'Validation failed' });
   }
 });
 
-/**
- * POST /api/upload-url
- * Get pre-signed upload URL for direct-to-B2 uploads (scalability improvement)
- * Frontend uploads directly to Backblaze, bypassing the backend server
- */
-app.post('/api/upload-url', async (req, res) => {
-  try {
-    const { fileName, mimeType, fileSize, userId } = req.body;
+// GET /api/health
+app.get('/api/health', (req, res) => res.json({ status: 'healthy', timestamp: new Date().toISOString() }));
 
-    if (!fileName || !mimeType || !fileSize) {
-      return res.status(400).json({ error: 'Missing required fields: fileName, mimeType, fileSize' });
-    }
-
-    // Validate file size on server side too
-    if (fileSize > MAX_FILE_SIZE) {
-      return res.status(400).json({ error: `File too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024}MB` });
-    }
-
-    // Validate mime type
-    if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
-      return res.status(400).json({ error: 'Invalid file type' });
-    }
-
-    // Get pre-signed upload URL from Backblaze
-    const uploadUrlData = await getUploadUrl();
-
-    // Generate fileId and OTC
-    const fileId = uuidv4();
-    const otc = generateOTC();
-
-    // Store metadata in Appwrite (but NOT the file yet - waiting for upload)
-    await databases.createDocument(
-      APPWRITE_CONFIG.databaseId,
-      APPWRITE_CONFIG.collectionOTC,
-      uuidv4(),
-      {
-        otc: otc,
-        fileId: fileId,
-        b2FileId: '', // Will be updated after direct upload
-        fileName: fileName,
-        fileSize: fileSize,
-        mimeType: mimeType,
-        createdAt: new Date().toISOString(),
-        used: false,
-        userId: userId || 'anonymous',
-        uploadPending: true // Flag to track if direct upload completed
-      }
-    );
-
-    res.json({
-      success: true,
-      uploadUrl: uploadUrlData.uploadUrl,
-      authorizationToken: uploadUrlData.authorizationToken,
-      fileId: fileId,
-      otc: otc,
-      message: 'Upload URL generated. Upload file directly to Backblaze B2, then confirm with /api/upload-complete'
-    });
-  } catch (error) {
-    console.error('Get upload URL error:', error);
-    res.status(500).json({ error: 'Failed to generate upload URL', details: error.message });
-  }
-});
-
-/**
- * POST /api/upload-complete
- * Confirm direct upload to B2 and finalize the record
- */
-app.post('/api/upload-complete', async (req, res) => {
-  try {
-    const { fileId, b2FileId, otc } = req.body;
-
-    if (!fileId || !b2FileId || !otc) {
-      return res.status(400).json({ error: 'Missing required fields: fileId, b2FileId, otc' });
-    }
-
-    // Find and update the record
-    const response = await databases.listDocuments(
-      APPWRITE_CONFIG.databaseId,
-      APPWRITE_CONFIG.collectionOTC,
-      [
-        Query.equal('otc', [otc]),
-        Query.equal('fileId', [fileId])
-      ]
-    );
-
-    if (response.documents.length === 0) {
-      return res.status(404).json({ error: 'Upload record not found' });
-    }
-
-    const doc = response.documents[0];
-
-    // Update with B2 file ID
-    await databases.updateDocument(
-      APPWRITE_CONFIG.databaseId,
-      APPWRITE_CONFIG.collectionOTC,
-      doc.$id,
-      {
-        b2FileId: b2FileId,
-        uploadPending: false
-      }
-    );
-
-    res.json({
-      success: true,
-      otc: otc,
-      message: 'File uploaded successfully. Share the OTC code for one-time access.'
-    });
-  } catch (error) {
-    console.error('Upload complete error:', error);
-    res.status(500).json({ error: 'Failed to confirm upload', details: error.message });
-  }
-});
-
-/**
- * GET /api/health
- * Health check endpoint
- */
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
-});
-
-// Start server
 app.listen(port, () => {
-  console.log(`Secure Print Backend running on port ${port}`);
-  console.log('Appwrite Configuration (Database):');
-  console.log(`  - Endpoint: ${process.env.APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1'}`);
-  console.log(`  - Project: ${process.env.APPWRITE_PROJECT || 'Not configured'}`);
-  console.log(`  - Database: ${APPWRITE_CONFIG.databaseId}`);
-  console.log('Backblaze B2 Configuration (File Storage):');
-  console.log(`  - Bucket ID: ${process.env.BACKBLAZE_BUCKET_ID || 'Not configured'}`);
+  console.log(`Secure Print Backend on port ${port}`);
 });
 
 export default app;

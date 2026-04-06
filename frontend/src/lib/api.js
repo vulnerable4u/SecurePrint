@@ -13,6 +13,50 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
  * @param {function} onProgress - Callback for progress updates (fileIndex, progress 0-100)
  * @returns {Promise<Object>} - { success, results: [{otc, fileId, fileName}], error? }
  */
+/**
+ * Upload batch of files under single OTC with total progress
+ */
+export async function uploadBatchFiles(files, userId = 'anonymous', onProgress = null) {
+  const formData = new FormData();
+  files.forEach(file => {
+    formData.append('files', file);
+  });
+  formData.append('userId', userId);
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable && onProgress) {
+        const progress = Math.round((e.loaded / e.total) * 100);
+        onProgress(progress);
+      }
+    });
+    
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          resolve(data);
+        } catch (e) {
+          reject(new Error('Invalid response'));
+        }
+      } else {
+        reject(new Error(`Upload failed with status ${xhr.status}`));
+      }
+    });
+    
+    xhr.addEventListener('error', () => reject(new Error('Network error')));
+    xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
+    
+    xhr.open('POST', `${API_BASE_URL}/api/upload`);
+    xhr.send(formData);
+  });
+}
+
+/**
+ * Legacy multi-file (kept for compatibility)
+ */
 export async function uploadFiles(files, userId = 'anonymous', onProgress = null) {
   const results = [];
   

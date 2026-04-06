@@ -9,15 +9,8 @@ import { isLoggedIn, logout } from '../lib/appwrite';
 interface FileWithProgress extends File {
   id: string;
   progress: number;
-  status: 'pending' | 'uploading' | 'success' | 'error';
+  status: 'pending' | 'uploading' | 'ready' | 'success' | 'error';
   otc?: string;
-  error?: string;
-}
-
-interface UploadResult {
-  success: boolean;
-  otc?: string;
-  fileId?: string;
   error?: string;
 }
 
@@ -27,28 +20,26 @@ function UploadPage() {
   const [loading, setLoading] = useState(true);
   const [files, setFiles] = useState<FileWithProgress[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
+  const [otcGenerated, setOtcGenerated] = useState(false);
+  const [otc, setOtc] = useState('');
   const [copied, setCopied] = useState(false);
 
   const MAX_FILES = 5;
-  const MAX_TOTAL_SIZE = 50 * 1024 * 1024; // 50MB
+  const MAX_TOTAL_SIZE = 50 * 1024 * 1024;
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
         const status = await isLoggedIn();
         setIsAuthenticated(status);
-        if (!status) {
-          navigate('/login');
-        }
-      } catch (error) {
+        if (!status) navigate('/login');
+      } catch {
         setIsAuthenticated(false);
         navigate('/login');
       } finally {
         setLoading(false);
       }
     };
-
     checkAuth();
   }, [navigate]);
 
@@ -58,7 +49,6 @@ function UploadPage() {
     navigate('/');
   };
 
-  // Allowed MIME types (must match backend)
   const ALLOWED_MIME_TYPES = [
     'application/pdf',
     'application/msword',
@@ -69,9 +59,7 @@ function UploadPage() {
     'application/vnd.openxmlformats-officedocument.presentationml.presentation'
   ];
 
-  const getTotalSize = (fileList: FileWithProgress[]) => {
-    return fileList.reduce((total, file) => total + file.size, 0);
-  };
+  const getTotalSize = (fileList: FileWithProgress[]) => fileList.reduce((total, file) => total + file.size, 0);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -79,127 +67,83 @@ function UploadPage() {
       const newFiles: FileWithProgress[] = [];
       
       for (const file of selectedFiles) {
-        // Check if already at max files
         if (files.length + newFiles.length >= MAX_FILES) {
-          alert(`Maximum ${MAX_FILES} files allowed`);
+          alert(`Maximum ${MAX_FILES} files`);
           break;
         }
-        
-        // Check file type
         if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-          alert(`Invalid file type: ${file.name}. Allowed: PDF, DOC, DOCX, TXT, PNG, JPG, PPTX`);
+          alert(`Invalid type: ${file.name}`);
           continue;
         }
-        
-        // Check individual file size (max 50MB per file for now, will check total below)
         if (file.size > 50 * 1024 * 1024) {
-          alert(`File too large: ${file.name}. Maximum size is 50MB`);
+          alert(`Too large: ${file.name}`);
           continue;
         }
-        
-        // Check total size
         const currentTotal = getTotalSize(files);
         if (currentTotal + file.size > MAX_TOTAL_SIZE) {
-          alert(`Total size would exceed 50MB limit. Current: ${(currentTotal / 1024 / 1024).toFixed(2)}MB`);
+          alert('Total size exceeds 50MB');
           break;
         }
-        
-        // Add file with extra properties
         newFiles.push(Object.assign(file, {
           id: `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           progress: 0,
           status: 'pending' as const
         }));
       }
-      
       setFiles(prev => [...prev, ...newFiles]);
-      setUploadResults([]);
+      setOtcGenerated(false);
+      setOtc('');
     }
-    
-    // Reset input
     e.target.value = '';
   };
 
   const removeFile = (fileId: string) => {
     setFiles(files.filter(f => f.id !== fileId));
-    setUploadResults([]);
+    setOtcGenerated(false);
+    setOtc('');
   };
 
   const handleUpload = async () => {
-    if (files.length === 0) return;
-
     setUploading(true);
-    setUploadResults([]);
-    
-    // Set all files to uploading status
     setFiles(files.map(f => ({ ...f, progress: 0, status: 'uploading' as const })));
 
     try {
-      const { uploadFiles } = await import('../lib/api');
-      
-      // Convert FileWithProgress to regular File array
-      // Use slice() to create a new Blob from the original file, then create a new File
-      const plainFiles = files.map(f => {
-        // Get the underlying blob from the file and create a new File
-        const blob = f.slice(0, f.size, f.type);
-        const plainFile = new File([blob], f.name, { type: f.type });
-        return plainFile;
-      });
-      
-      // Upload with progress tracking
-      const result = await uploadFiles(
+      const { uploadBatchFiles } = await import('../lib/api');
+      const plainFiles = files.map(f => new File([f], f.name, { type: f.type }));
+      const result = await uploadBatchFiles(
         plainFiles,
-        'authenticated_user',
-        (fileIndex: number, progress: number) => {
-          // Use functional update to avoid stale state issues
-          setFiles(prev => prev.map((f, idx) => 
-            idx === fileIndex ? { ...f, progress } : f
-          ));
-        }
-      ) as { success: boolean; results: UploadResult[] };
-      
-      // Ensure result has expected structure
-      if (!result || !result.results) {
-        throw new Error('Invalid response from server');
+        'user',
+        (progress: number) => setFiles(prev => prev.map(f => ({ ...f, progress } as FileWithProgress)))
+      );
+
+      if (result.success) {
+        setFiles(prev => prev.map(f => ({ ...f, status: 'ready' as const, progress: 100 } as FileWithProgress)));
+      } else {
+        throw new Error(result.error);
       }
-      
-      // Update file statuses - handle case where results might not match files length
-      setFiles(prev => prev.map((f, idx) => {
-        const fileResult = result.results[idx];
-        if (!fileResult) {
-          return { ...f, status: 'error' as const, error: 'No result returned for file' };
-        }
-        return {
-          ...f,
-          status: fileResult.success ? 'success' as const : 'error' as const,
-          otc: fileResult.otc,
-          error: fileResult.error,
-          progress: 100
-        };
-      }));
-      
-      setUploadResults(result.results);
-    } catch (error: unknown) {
-      console.error('Upload error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Upload failed. Please try again.';
-      // Update all files to error state
-      setFiles(prev => prev.map(f => ({ ...f, status: 'error' as const, error: errorMessage })));
-      setUploadResults([{ success: false, error: errorMessage }]);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Upload failed';
+      setFiles(prev => prev.map(f => ({ ...f, status: 'error' as const, error: msg } as FileWithProgress)));
     } finally {
       setUploading(false);
     }
   };
 
-  const copyOTC = (otc: string) => {
+  const handleGenerateOTC = async () => {
+    const otcCode = Math.random().toString(36).substr(2, 6).toUpperCase();
+    setOtc(otcCode);
+    setOtcGenerated(true);
+    setFiles(prev => prev.map(f => ({ ...f, otc: otcCode } as FileWithProgress)));
+  };
+
+  const copyOTC = () => {
     navigator.clipboard.writeText(otc);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const getFileIcon = (type: string) => {
-    if (type.startsWith('image/')) {
-      return <Image className="w-8 h-8 text-blue-500" />;
-    }
+  const getFileIcon = (type?: string) => {
+    if (type?.startsWith('image/')) return <Image className="w-8 h-8 text-blue-500" />;
     return <FileText className="w-8 h-8 text-blue-500" />;
   };
 
@@ -209,167 +153,118 @@ function UploadPage() {
     return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
   };
 
+  const filesReady = files.length > 0 && files.every(f => f.status === 'ready');
   const totalSize = getTotalSize(files);
-  const allUploaded = files.length > 0 && files.every(f => f.status === 'success');
   const hasErrors = files.some(f => f.status === 'error');
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="relative">
-            <div className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-            <Shield className="w-8 h-8 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
-          </div>
-          <p className="text-muted-foreground animate-pulse">Loading...</p>
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4" />
+          <p>Loading...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-      {/* Header */}
-      <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <Link to="/" className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+      <header className="border-b bg-white/80 backdrop-blur top-0 sticky z-50">
+        <div className="max-w-4xl mx-auto px-6 py-4">
+          <div className="flex justify-between items-center">
+            <Link to="/" className="flex gap-3 items-center p-3 rounded-lg hover:bg-slate-100">
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
                 <Shield className="w-6 h-6 text-white" />
               </div>
-              <span className="font-bold text-xl text-slate-900 font-poppins">SecurePrint</span>
+              <span className="font-bold text-xl hidden md:block">SecurePrint</span>
             </Link>
-            
-            <div className="flex items-center gap-3">
-              <Button variant="outline" onClick={handleLogout}>
-                <LogOut className="w-4 h-4 mr-2" />
-                Logout
-              </Button>
-            </div>
+            <Button variant="ghost" onClick={handleLogout}>
+              <LogOut className="mr-2 w-4 h-4" />
+              Logout
+            </Button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 py-8">
-        <Card>
-          <CardHeader className="text-center">
-            <div className="mx-auto w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center mb-4">
-              <Upload className="w-8 h-8 text-white" />
+      <main className="max-w-2xl mx-auto px-6 py-12">
+        <Card className="shadow-2xl border-0">
+          <CardHeader className="text-center pb-2">
+            <div className="w-20 h-20 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 rounded-3xl mx-auto mb-6 shadow-xl flex items-center justify-center">
+              <Upload className="w-10 h-10 text-white" />
             </div>
-            <CardTitle className="text-2xl">Upload Files</CardTitle>
-            <CardDescription>
-              Upload up to 5 files (max 50MB total). Each file gets a one-time access code.
+            <CardTitle className="text-3xl font-bold bg-gradient-to-r from-slate-900 to-blue-900 bg-clip-text text-transparent">
+              Secure File Upload
+            </CardTitle>
+            <CardDescription className="text-lg">
+              Up to 5 files • 50MB total • OTC expires in 10 minutes
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
-            {/* File Stats */}
-            <div className="flex justify-between items-center text-sm text-muted-foreground">
-              <span>Files: {files.length} / {MAX_FILES}</span>
-              <span>Total: {formatFileSize(totalSize)} / {formatFileSize(MAX_TOTAL_SIZE)}</span>
-            </div>
-
-            {/* Progress Bar for Total */}
-            {(uploading || allUploaded) && (
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="font-medium">
-                    {uploading ? 'Uploading...' : allUploaded ? 'Upload Complete!' : 'Processing...'}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {files.filter(f => f.status === 'success').length} / {files.length} files
-                  </span>
+          <CardContent className="space-y-8">
+            {/* Stats */}
+            <div className="grid grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-xl">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-blue-600" />
                 </div>
-                <Progress value={(files.filter(f => f.status === 'success').length / files.length) * 100} />
+                <div>
+                  <div className="font-semibold text-slate-900">{files.length}</div>
+                  <div className="text-slate-500">of 5 files</div>
+                </div>
               </div>
-            )}
-
-            {/* File Input */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Select Files</label>
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition-colors">
-                <input
-                  type="file"
-                  onChange={handleFileChange}
-                  className="hidden"
-                  id="file-upload"
-                  multiple
-                  accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/png,image/jpeg,application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                />
-                <label htmlFor="file-upload" className="cursor-pointer">
-                  <div className="flex flex-col items-center">
-                    <Upload className="w-12 h-12 text-gray-400 mb-2" />
-                    <p className="font-medium text-slate-900">Click to select files</p>
-                    <p className="text-sm text-muted-foreground">
-                      PDF, DOC, DOCX, TXT, PNG, JPG, PPTX up to 50MB total
-                    </p>
-                  </div>
-                </label>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                  <Image className="w-4 h-4 text-green-600" />
+                </div>
+                <div>
+                  <div className="font-semibold text-slate-900">{formatFileSize(totalSize)}</div>
+                  <div className="text-slate-500">50MB max</div>
+                </div>
               </div>
             </div>
 
-            {/* File List */}
+            {/* File Drop */}
+            <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center hover:border-blue-400 transition-all bg-slate-50 hover:bg-blue-50/50 group cursor-pointer">
+              <input
+                type="file"
+                onChange={handleFileChange}
+                className="hidden"
+                id="file-upload"
+                multiple
+              />
+              <label htmlFor="file-upload">
+                <Upload className="w-16 h-16 text-slate-400 mx-auto mb-4 group-hover:text-blue-500 transition-colors" />
+                <h3 className="text-xl font-bold text-slate-900 mb-1">Drop files here or click to browse</h3>
+                <p className="text-slate-500 mb-4">PDF, DOC, images (max 50MB total)</p>
+                <div className="text-xs text-slate-400">Up to 5 files</div>
+              </label>
+            </div>
+
+            {/* Files list */}
             {files.length > 0 && (
               <div className="space-y-3">
-                {files.map((file, index) => (
-                  <div 
-                    key={file.id}
-                    className={`flex items-center gap-3 p-3 rounded-lg border ${
-                      file.status === 'success' ? 'bg-green-50 border-green-200' :
-                      file.status === 'error' ? 'bg-red-50 border-red-200' :
-                      file.status === 'uploading' ? 'bg-blue-50 border-blue-200' :
-                      'bg-white border-gray-200'
-                    }`}
-                  >
+                <h4 className="font-semibold text-lg flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Selected files ({files.length})
+                </h4>
+                {files.map((file) => (
+                  <div key={file.id} className="flex items-center p-4 bg-white rounded-xl shadow-sm border hover:shadow-md transition-all gap-4">
                     {getFileIcon(file.type)}
-                    
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{file.name}</p>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>{formatFileSize(file.size)}</span>
-                        {file.status === 'uploading' && (
-                          <span className="text-blue-600">{file.progress}%</span>
-                        )}
-                        {file.status === 'success' && file.otc && (
-                          <span className="text-green-600 font-medium">OTC: {file.otc}</span>
-                        )}
-                        {file.status === 'error' && (
-                          <span className="text-red-600">{file.error}</span>
-                        )}
-                      </div>
-                      
-                      {/* Individual Progress Bar */}
-                      {(file.status === 'uploading' || file.status === 'success') && (
-                        <Progress value={file.progress} className="h-1 mt-1" />
-                      )}
+                      <p className="font-medium text-sm truncate pr-4">{file.name}</p>
+                      <p className="text-xs text-slate-500">{formatFileSize(file.size)}</p>
                     </div>
-
-                    {/* Status Icon */}
-                    {file.status === 'success' && (
-                      <div className="flex items-center gap-1">
-                        <Check className="w-5 h-5 text-green-600" />
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8"
-                          onClick={() => file.otc && copyOTC(file.otc)}
-                        >
-                          <Copy className="w-4 h-4" />
-                        </Button>
+                    {file.status === 'uploading' && (
+                      <div className="flex items-center gap-2">
+                        <Progress value={file.progress} className="w-20 h-2" />
+                        <span className="text-xs font-mono">{file.progress}%</span>
                       </div>
                     )}
-                    
                     {file.status === 'error' && (
                       <AlertCircle className="w-5 h-5 text-red-500" />
                     )}
-                    
-                    {/* Remove Button */}
-                    {!uploading && file.status === 'pending' && (
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8"
-                        onClick={() => removeFile(file.id)}
-                      >
+                    {file.status === 'pending' && (
+                      <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => removeFile(file.id)}>
                         <X className="w-4 h-4" />
                       </Button>
                     )}
@@ -378,43 +273,77 @@ function UploadPage() {
               </div>
             )}
 
-            {/* Upload Button */}
-            <Button
-              className="w-full"
-              size="lg"
-              onClick={handleUpload}
-              disabled={files.length === 0 || uploading || allUploaded}
-            >
-              {uploading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin mr-2" />
-                  Uploading {files.length} file(s)...
-                </>
-              ) : allUploaded ? (
-                <>
-                  <Check className="w-4 h-4 mr-2" />
-                  All Files Uploaded
-                </>
-              ) : (
-                <>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload {files.length} File{files.length !== 1 ? 's' : ''} Securely
-                </>
-              )}
-            </Button>
-
-            {/* Upload More Button */}
-            {allUploaded && (
-              <Button 
-                variant="outline" 
-                className="w-full"
-                onClick={() => {
-                  setFiles([]);
-                  setUploadResults([]);
-                }}
+            {/* Main button - HIDDEN when filesReady */}
+            {!filesReady && (
+              <Button
+                size="lg"
+                className="w-full h-14 text-lg font-semibold shadow-xl"
+                onClick={handleUpload}
+                disabled={!files.length || uploading}
               >
-                Upload More Files
+                {uploading ? (
+                  <>
+                    <div className="w-5 h-5 animate-spin rounded-full border-2 border-current border-t-transparent mr-3" />
+                    Uploading...
+                  </>
+                ) : (
+                  'Start Upload'
+                )}
               </Button>
+            )}
+
+            {/* Post-upload buttons - ONLY when filesReady */}
+            {filesReady && (
+              <div className="grid grid-cols-2 gap-4">
+                <Button 
+                  variant="outline" 
+                  size="lg"
+                  onClick={() => {
+                    // Reset to select new files, keep ready state but clear files list
+                    setFiles([]);
+                    setOtcGenerated(false);
+                    setOtc('');
+                  }}
+                >
+                  Upload More
+                </Button>
+                <Button 
+                  size="lg"
+                  className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 shadow-xl"
+                  onClick={handleGenerateOTC}
+                >
+                  Generate OTC
+                </Button>
+              </div>
+            )}
+
+            {/* OTC display */}
+            {otcGenerated && otc && (
+              <Card className="bg-gradient-to-r from-emerald-500 to-green-600 text-white border-0 shadow-2xl">
+                <CardContent className="p-8 text-center pt-8">
+                  <FileKey className="w-16 h-16 mx-auto mb-4 opacity-90" />
+                  <h3 className="text-2xl font-bold mb-4">Your OTC Code</h3>
+                  <div className="bg-white/20 backdrop-blur-lg rounded-2xl p-6 mb-6">
+                    <p className="text-4xl font-mono tracking-widest uppercase font-black">{otc}</p>
+                  </div>
+                  <p className="text-emerald-100 mb-6">Valid for 10 minutes. Share securely.</p>
+                  <Button 
+                    variant="secondary" 
+                    size="lg"
+                    className="w-full font-semibold"
+                    onClick={copyOTC}
+                  >
+                    {copied ? 'Copied!' : 'Copy OTC'}
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {hasErrors && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
+                <AlertCircle className="w-5 h-5 text-red-500" />
+                <span className="text-sm text-red-800">Upload failed. Check console.</span>
+              </div>
             )}
           </CardContent>
         </Card>

@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Shield, Lock, Printer, ArrowRight, FileKey, Users, Zap } from 'lucide-react';
@@ -72,8 +71,8 @@ if (loading) {
     },
     {
       icon: Users,
-      title: 'No Account Required',
-      description: 'Upload and share files anonymously. Optional accounts for managing your document history.',
+      title: 'Account Required',
+      description: 'Login required to upload files. Secure your document history with your account.',
       color: 'text-amber-600',
       bg: 'bg-amber-100',
     },
@@ -261,19 +260,8 @@ if (loading) {
       <footer className="bg-slate-900 text-slate-400 py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid md:grid-cols-4 gap-8">
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
-                  <Shield className="w-6 h-6 text-white" />
-                </div>
-                <span className="font-bold text-xl text-white font-poppins">SecurePrint</span>
-              </div>
-              <p className="text-sm">
-                Privacy-first document sharing with one-time access codes for secure printing.
-              </p>
-            </div>
-            
-            <div>
+            <div className="flex items-center gap-2 mb-4"></div>
+        <div>
               <h4 className="font-semibold text-white mb-4">Product</h4>
               <ul className="space-y-2 text-sm">
                 <li><Link to="/features" className="hover:text-white transition-colors">Features</Link></li>

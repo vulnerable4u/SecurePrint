@@ -1,5 +1,5 @@
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 /**
  * API Service for Secure Print Backend
@@ -7,21 +7,23 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
  */
 
 /**
- * Upload multiple files for secure printing with progress tracking
- * @param {File[]} files - Array of files to upload
- * @param {string} userId - Optional user ID
- * @param {function} onProgress - Callback for progress updates (fileIndex, progress 0-100)
- * @returns {Promise<Object>} - { success, results: [{otc, fileId, fileName}], error? }
- */
-/**
  * Upload batch of files under single OTC with total progress
+ * @param {File[]} files - Array of files to upload
+ * @param {string} [userId='anonymous'] - Optional user ID
+ * @param {(progress: number) => void} [onProgress=null] - Callback for progress updates (0-100)
+ * @returns {Promise<{success: boolean, otc: string, files: number}>}
  */
 export async function uploadBatchFiles(files, userId = 'anonymous', onProgress = null) {
+  console.log('🔧 uploadBatchFiles called with:', { filesCount: files.length, userId });
+  
   const formData = new FormData();
   files.forEach(file => {
+    console.log('📎 Adding file to FormData:', file.name, file.size, file.type);
     formData.append('files', file);
   });
   formData.append('userId', userId);
+
+  console.log('🌐 API_BASE_URL:', import.meta.env.VITE_API_URL);
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -34,22 +36,53 @@ export async function uploadBatchFiles(files, userId = 'anonymous', onProgress =
     });
     
     xhr.addEventListener('load', () => {
+      console.log('📥 XHR load event:', {
+        status: xhr.status,
+        statusText: xhr.statusText,
+        responseText: xhr.responseText
+      });
+      
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const data = JSON.parse(xhr.responseText);
+          console.log('✅ Parsed response data:', data);
           resolve(data);
         } catch (e) {
-          reject(new Error('Invalid response'));
+          console.error('❌ JSON parse error:', e);
+          reject(new Error('Invalid response format from server'));
+        }
+      } else if (xhr.status === 413) {
+        console.error('❌ File too large error');
+        reject(new Error('File too large'));
+      } else if (xhr.status === 400) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          console.error('❌ Validation error:', data);
+          reject(new Error(data.error || 'Validation failed'));
+        } catch {
+          console.error('❌ Validation error - invalid JSON');
+          reject(new Error('Upload validation failed'));
         }
       } else {
-        reject(new Error(`Upload failed with status ${xhr.status}`));
+        console.error('❌ Upload failed with status:', xhr.status, xhr.responseText);
+        reject(new Error(`Upload failed: ${xhr.status}`));
       }
     });
     
-    xhr.addEventListener('error', () => reject(new Error('Network error')));
-    xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
+    xhr.addEventListener('error', (e) => {
+      console.error('❌ XHR error event:', e);
+      reject(new Error('Network error'));
+    });
+    xhr.addEventListener('abort', (e) => {
+      console.error('❌ XHR abort event:', e);
+      reject(new Error('Upload cancelled'));
+    });
     
-    xhr.open('POST', `${API_BASE_URL}/api/upload`);
+    const uploadUrl = `${API_BASE_URL}/upload`;
+    console.log('🚀 Opening XHR request to:', uploadUrl);
+    xhr.open('POST', uploadUrl);
+    
+    console.log('📤 Sending XHR request...');
     xhr.send(formData);
   });
 }
@@ -145,7 +178,7 @@ function uploadWithProgress(formData, onProgress) {
       reject(new Error('Upload cancelled'));
     });
     
-    xhr.open('POST', `${API_BASE_URL}/api/upload`);
+    xhr.open('POST', `${API_BASE_URL}/upload`);
     xhr.send(formData);
   });
 }
@@ -178,7 +211,7 @@ export async function uploadFile(file, encryptionKey, userId = 'anonymous') {
  */
 export async function validateOTC(otc) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/validate-otc`, {
+    const response = await fetch(`${API_BASE_URL}/validate-otc`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -207,7 +240,7 @@ export async function validateOTC(otc) {
  */
 export async function retrieveFile(otc, encryptionKey) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/retrieve`, {
+    const response = await fetch(`${API_BASE_URL}/retrieve`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -250,7 +283,7 @@ export async function retrieveFile(otc, encryptionKey) {
  */
 export async function healthCheck() {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/health`);
+    const response = await fetch(`${API_BASE_URL}/health`);
     const data = await response.json();
     return data;
   } catch (error) {

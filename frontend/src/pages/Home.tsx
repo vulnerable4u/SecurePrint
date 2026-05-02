@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Shield, Lock, Printer, ArrowRight, FileKey, Users, Zap } from 'lucide-react';
+import { Shield, Lock, Printer, ArrowRight, FileKey, Users, Zap, User } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
-import { login, logout, isLoggedIn } from '../lib/appwrite';
+import { login, logout, isLoggedIn, getCurrentUser, getInitials } from '../lib/appwrite';
 
 function Home() {
   const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [userInitials, setUserInitials] = useState('');
 
   useEffect(() => {
     checkAuth();
@@ -18,6 +19,12 @@ function Home() {
     try {
       const status = await isLoggedIn();
       setIsAuthenticated(status);
+      if (status) {
+        const result = await getCurrentUser();
+        if (result.success && result.user) {
+          setUserInitials(getInitials(result.user.name));
+        }
+      }
     } catch (error) {
       setIsAuthenticated(false);
     } finally {
@@ -125,13 +132,11 @@ if (loading) {
                   <Button variant="gradient" onClick={() => navigate('/upload')}>
                     Upload File
                   </Button>
-                  <Button variant="outline" onClick={async () => {
-                    await logout();
-                    setIsAuthenticated(false);
-                    navigate('/');
-                  }}>
-                    Logout
-                  </Button>
+                  <Link to="/profile" className="flex items-center gap-2 group">
+                    <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-sm group-hover:shadow-md transition-shadow">
+                      {userInitials || 'U'}
+                    </div>
+                  </Link>
                 </>
               ) : (
                 <>

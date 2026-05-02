@@ -4,7 +4,7 @@ import { Client, Account } from 'appwrite';
 const client = new Client();
 
 client
-  .setEndpoint(import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1')
+.setEndpoint(import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://syd.cloud.appwrite.io/v1')
   .setProject(import.meta.env.VITE_APPWRITE_PROJECT || '');
 
 export const account = new Account(client);
@@ -55,5 +55,43 @@ export async function isLoggedIn() {
   } catch {
     return false;
   }
+}
+
+export async function updateName(name) {
+  try {
+    const user = await account.updateName(name);
+    return { success: true, user };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function updatePassword(newPassword, oldPassword) {
+  try {
+    const user = await account.updatePassword(newPassword, oldPassword);
+    return { success: true, user };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function updateEmail(email, password) {
+  try {
+    const user = await account.updateEmail(email, password);
+    return { success: true, user };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+export function getInitials(name) {
+  if (!name) return '?';
+  return name
+    .split(' ')
+    .map(part => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
 }
 

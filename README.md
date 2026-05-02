@@ -2,6 +2,15 @@
 
 A secure file sharing application that allows users to upload encrypted files and share them via one-time codes (OTC). Files are encrypted client-side using AES-256-GCM and can only be retrieved once before being automatically deleted.
 
+## Problem Statement
+
+Public printing/Xerox shops pose a serious privacy risk—users often have to share sensitive documents (IDs, resumes, confidential files) with operators who can view, copy, or misuse them. There is no secure, user-controlled mechanism to ensure that files are accessed only for printing and only once, without exposure or retention.
+
+
+## Solution
+
+Developed a secure file-sharing web application that enables users to upload client-side encrypted files and share them via one-time codes (OTC). Files can be accessed exactly once for printing and are automatically deleted after retrieval, ensuring confidentiality and zero data persistence.
+
 ## Features
 
 - **End-to-End Encryption**: Files are encrypted in the browser using AES-256-GCM before upload

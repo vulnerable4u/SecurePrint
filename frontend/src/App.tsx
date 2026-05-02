@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Upload from './pages/Upload';
 import Retrieve from './pages/Retrieve';
+import Profile from './pages/Profile';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -75,6 +76,7 @@ function App() {
               <Route path="/register" element={<Register />} />
               <Route path="/upload" element={<Upload />} />
               <Route path="/retrieve" element={<Retrieve />} />
+              <Route path="/profile" element={<Profile />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </div>

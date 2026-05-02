@@ -1,16 +1,31 @@
 import dotenv from 'dotenv';
-dotenv.config();
+dotenv.config({ path: './.env' });
 
 import { uploadFile as b2Upload, downloadFile as b2Download, deleteFile as b2Delete } from './backblaze.js';
-import { databases, APPWRITE_CONFIG } from './appwrite.js';
+import { createDatabases } from './appwrite.js';
 import { Query, ID } from 'node-appwrite';
 import archiver from 'archiver';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';
+
+// Init Appwrite AFTER explicit dotenv
+let databases;
+let APPWRITE_CONFIG;
+try {
+  ({ databases, APPWRITE_CONFIG } = createDatabases());
+  console.log('Appwrite initialized successfully');
+} catch (error) {
+  console.error('Appwrite init failed:', error.message);
+  console.error('Check backend/.env has valid APPWRITE_* vars');
+  process.exit(1);
+}
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -26,8 +41,19 @@ const ALLOWED_MIME_TYPES = [
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
+// Use disk storage instead of memory for free tier (Render 512MB RAM)
+const uploadDir = path.join(os.tmpdir(), 'secure-print-uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: uploadDir,
+    filename: (req, file, cb) => {
+      cb(null, `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`);
+    }
+  }),
   limits: { fileSize: MAX_FILE_SIZE, files: 5 },
   fileFilter: (req, file, cb) => {
     if (ALLOWED_MIME_TYPES.includes(file.mimetype)) cb(null, true);
@@ -35,8 +61,36 @@ const upload = multer({
   },
 });
 
-app.use(cors());
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:8080,http://localhost:8081,https://secureprint.onrender.com').split(',');
+
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
 app.use(express.json());
+
+// Rate limiters for free tier protection
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10, // 10 uploads per minute per IP
+  message: { error: 'Too many uploads. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    // Allow health checks and retrieve to bypass
+    return req.path === '/api/health';
+  }
+});
 
 // Rate limit /api/retrieve: 10/min/IP
 const retrieveLimiter = rateLimit({
@@ -66,19 +120,43 @@ async function generateUniqueOTC() {
 }
 
 // POST /api/upload - 1-5 files under one OTC
-app.post('/api/upload', upload.array('files', 5), async (req, res) => {
+app.post('/api/upload', uploadLimiter, upload.array('files', 5), async (req, res) => {
   const b2FileIds = [];
+  const tempFiles = [];
+  
   try {
+    console.log('🚀 Upload request received:', {
+      fileCount: req.files?.length,
+      userId: req.body.userId,
+      timestamp: new Date().toISOString()
+    });
+
     const files = req.files;
-    if (!files?.length) return res.status(400).json({ error: 'No files uploaded' });
-    if (files.length > 5) return res.status(400).json({ error: 'Max 5 files' });
+    if (!files?.length) {
+      console.log('❌ No files uploaded');
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+    if (files.length > 5) {
+      console.log('❌ Too many files:', files.length);
+      return res.status(400).json({ error: 'Max 5 files' });
+    }
 
     const fileNames = [];
     const fileSizes = [];
     const mimeTypes = [];
 
+    console.log('📁 Processing files:', files.map(f => ({ name: f.originalname, size: f.size, type: f.mimetype })));
+
     for (const file of files) {
-      const b2Result = await b2Upload(file.buffer, file.originalname, file.mimetype);
+      // Read file from disk
+      const fileBuffer = fs.readFileSync(file.path);
+      tempFiles.push(file.path); // Track for cleanup
+      
+      console.log(`⬆️ Uploading file: ${file.originalname} (${fileBuffer.length} bytes)`);
+      
+      const b2Result = await b2Upload(fileBuffer, file.originalname, file.mimetype);
+      console.log(`✅ File uploaded to B2: ${b2Result.fileId}`);
+      
       b2FileIds.push(b2Result.fileId);
       fileNames.push(file.originalname);
       fileSizes.push(file.size);
@@ -91,11 +169,13 @@ app.post('/api/upload', upload.array('files', 5), async (req, res) => {
       throw new Error('Metadata array mismatch');
     }
 
+    console.log('🔢 Generating OTC...');
     const otc = await generateUniqueOTC();
     const now = new Date().toISOString();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
     const docId = ID.unique();
 
+    console.log('💾 Creating OTC document in Appwrite...');
     await databases.createDocument(APPWRITE_CONFIG.databaseId, APPWRITE_CONFIG.collectionOTC, docId, {
       otc,
       b2FileIds,
@@ -108,14 +188,43 @@ app.post('/api/upload', upload.array('files', 5), async (req, res) => {
       userId: req.body.userId || 'anonymous',
     });
 
+    console.log('✅ Upload successful:', { otc, files: files.length, expiresAt });
     res.json({ success: true, otc, files: files.length });
   } catch (error) {
+    console.error('❌ Upload error:', {
+      message: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    });
+    
     // Cleanup orphan B2 files
     for (const b2FileId of b2FileIds) {
-      b2Delete(b2FileId).catch(console.error);
+      b2Delete(b2FileId).catch(err => console.error('Failed to cleanup B2 file:', err));
     }
-    console.error('Upload error:', error);
-    res.status(500).json({ error: 'Upload failed', details: error.message });
+    
+    // Clean error messages for clients
+    const errorMessage = error.message.includes('Invalid file type')
+      ? 'Invalid file type. Only PDF, DOC, DOCX, TXT, PNG, JPG allowed.'
+      : error.message.includes('File too large')
+      ? 'File exceeds 100MB limit'
+      : error.message.includes('Metadata array mismatch')
+      ? 'File processing error. Please try again.'
+      : error.message.includes('Appwrite')
+      ? 'Database error. Please try again.'
+      : error.message.includes('Backblaze')
+      ? 'Storage error. Please try again.'
+      : 'Upload failed. Please try again.';
+    
+    res.status(400).json({ error: errorMessage });
+  } finally {
+    // Cleanup temp files
+    for (const tempFile of tempFiles) {
+      try {
+        fs.unlinkSync(tempFile);
+      } catch (e) {
+        console.error('Temp file cleanup failed:', e.message);
+      }
+    }
   }
 });
 
@@ -155,9 +264,13 @@ app.post('/api/retrieve', retrieveLimiter, async (req, res) => {
         zip.on('data', chunk => chunks.push(chunk));
         zip.on('end', () => resolve(Buffer.concat(chunks)));
         zip.on('error', reject);
+        (async () => {
           for (let i = 0; i < numFiles; i++) {
-                    zip.file(b2Download(b2FileIds[i]), { name: fileNames[i] });      }
-                         zip.finalize();
+            const buffer = await b2Download(b2FileIds[i]);
+            zip.append(buffer, { name: fileNames[i] });
+          }
+          zip.finalize();
+        })().catch(reject);
       });
       contentType = 'application/zip';
       filename = `secure-print-${otc}.zip`;
@@ -169,9 +282,11 @@ app.post('/api/retrieve', retrieveLimiter, async (req, res) => {
       usedAt: new Date().toISOString(),
     });
 
-    // Cleanup B2 and doc
-    for (const b2FileId of b2FileIds) {
-      b2Delete(b2FileId).catch(console.error);
+    // Cleanup B2 files
+    for (let i = 0; i < b2FileIds.length; i++) {
+      await b2Delete(b2FileIds[i]).catch(err => {
+        console.error(`Cleanup failed for file ${i}:`, err.message);
+      });
     }
     await databases.deleteDocument(APPWRITE_CONFIG.databaseId, APPWRITE_CONFIG.collectionOTC, docId);
 
@@ -207,7 +322,12 @@ app.post('/api/validate-otc', async (req, res) => {
     res.json({
       valid: !doc.used && !expired,
       files: doc.b2FileIds?.length || 0,
+      fileNames: doc.fileNames || [],
+      totalFiles: doc.b2FileIds?.length || 0,
+      totalSize: (doc.fileSizes || []).reduce((a, b) => a + b, 0),
+      isBatch: (doc.b2FileIds?.length || 0) > 1,
       expiresAt: doc.expiresAt,
+      error: doc.used ? 'OTC already used' : expired ? 'OTC expired' : null
     });
   } catch (error) {
     console.error('Validate error:', error);
@@ -215,12 +335,28 @@ app.post('/api/validate-otc', async (req, res) => {
   }
 });
 
-// GET /api/health
-app.get('/api/health', (req, res) => res.json({ status: 'healthy', timestamp: new Date().toISOString() }));
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage()
+  });
+});
 
 app.listen(port, () => {
-  console.log(`Secure Print Backend on port ${port}`);
+  console.log(`🚀 SecurePrint backend running on port ${port}`);
+  console.log(`📊 Health check: http://localhost:${port}/api/health`);
+  console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📁 Upload directory: ${uploadDir}`);
+  console.log(`⚙️  Rate limits: 10 uploads/min, 10 retrieves/min`);
+  
+  // Check critical services
+  console.log('🔍 Checking services...');
+  console.log(`✅ Appwrite: ${APPWRITE_CONFIG.databaseId}/${APPWRITE_CONFIG.collectionOTC}`);
+  console.log(`✅ Backblaze: ${process.env.BACKBLAZE_BUCKET_ID ? 'Configured' : 'Not configured'}`);
+  console.log('✅ Server ready to accept requests');
 });
 
 export default app;
-

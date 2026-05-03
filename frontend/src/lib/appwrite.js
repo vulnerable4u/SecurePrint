@@ -19,7 +19,7 @@ function getNetworkErrorMessage(error) {
   const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
 
   if (error.message === 'Network request failed' && currentHost && !isLoopbackHost(currentHost)) {
-    return 'Unable to connect to the authentication service. Please try again from the configured app URL.';
+    return `Authentication is blocked for this site origin. Add https://${currentHost} as a Web platform in your Appwrite project, then redeploy or refresh and try again.`;
   }
 
   return error.message;

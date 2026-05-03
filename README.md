@@ -1,141 +1,198 @@
-# Secure Print 
-
-A secure file sharing application that allows users to upload encrypted files and share them via one-time codes (OTC). Files are encrypted client-side using AES-256-GCM and can only be retrieved once before being automatically deleted.
+# SecurePrint
 
 ## Problem Statement
 
-Public printing/Xerox shops pose a serious privacy risk—users often have to share sensitive documents (IDs, resumes, confidential files) with operators who can view, copy, or misuse them. There is no secure, user-controlled mechanism to ensure that files are accessed only for printing and only once, without exposure or retention.
-
+Public print and Xerox shops often require people to hand over sensitive documents to someone else for printing. That creates a privacy gap: personal IDs, resumes, application forms, financial records, and other confidential files can be viewed, copied, or retained without the sender's control. SecurePrint addresses that gap by giving users a way to share files for one-time retrieval in a short-lived print workflow.
 
 ## Solution
 
-Developed a secure file-sharing web application that enables users to upload client-side encrypted files and share them via one-time codes (OTC). Files can be accessed exactly once for printing and are automatically deleted after retrieval, ensuring confidentiality and zero data persistence.
+SecurePrint is a one-time file sharing app for print workflows. Users sign in with Appwrite, upload up to 5 files, receive a 6-character OTC, and the recipient can download the files exactly once before they are deleted from storage.
 
-## Features
+## What It Does
 
-- **End-to-End Encryption**: Files are encrypted in the browser using AES-256-GCM before upload
-- **One-Time Codes**: Each file generates a unique 6-digit code that can only be used once
-- **Auto-Deletion**: Files are automatically deleted from storage after successful retrieval
-- **Secure Authentication**: User registration and login with Appwrite
-- **Dark/Light Theme**: Full theme support with dark mode
+- Authenticates users with Appwrite email/password sessions
+- Uploads 1 to 5 files per request
+- Stores file binaries in Backblaze B2
+- Stores OTC metadata in an Appwrite database
+- Validates OTCs before download
+- Deletes files and metadata after successful retrieval
+- Expires OTCs after 10 minutes
 
-## Tech Stack
+## Current Architecture
 
 ### Frontend
-- **React 18** - UI library
-- **TypeScript** - Type-safe JavaScript
-- **Vite** - Fast build tool and dev server
-- **Tailwind CSS** - Utility-first CSS framework
-- **shadcn/ui** - Reusable UI components
-- **Appwrite** - Backend-as-a-Service (auth, database, storage)
-- **Web Crypto API** - Native browser AES-256-GCM encryption
+
+- React + Vite
+- Tailwind CSS + shadcn-style UI components
+- Appwrite Web SDK for auth
+- Direct browser calls to Appwrite for login, register, profile, and session checks
+- Direct browser calls to the backend for upload, OTC validation, and retrieval
 
 ### Backend
-- **Node.js** - JavaScript runtime
-- **Express.js** - Web framework
-- **Appwrite SDK** - Server-side database and storage
-- **Multer** - File upload handling
-- **Native Crypto** - Server-side encryption
 
-## Getting Started
+- Node.js + Express
+- Multer for multipart uploads
+- Appwrite server SDK for OTC metadata
+- Backblaze B2 for file storage
+- `archiver` for multi-file ZIP downloads
+- Rate limiting on upload and retrieve routes
+
+## Important Implementation Notes
+
+- Files are not currently encrypted client-side before upload.
+- Files are uploaded from the browser to the backend, then stored in Backblaze B2.
+- OTCs are 6-character alphanumeric codes, not 6-digit numeric codes.
+- A single OTC can represent multiple files.
+- Successful retrieval deletes the stored files and the OTC document.
+
+## Project Structure
+
+```text
+secure-print-flow/
+├── backend/
+│   ├── appwrite.js
+│   ├── backblaze.js
+│   ├── server.js
+│   └── package.json
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── lib/
+│   │   ├── pages/
+│   │   └── types/
+│   └── package.json
+├── package.json
+└── README.md
+```
+
+## Local Development
 
 ### Prerequisites
-- Node.js 18+
-- npm or bun
-- Git
 
-### Installation
+- Node.js 20+
+- npm
 
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd secure-print-flow
-```
+### Install
 
-2. Install dependencies:
 ```bash
 npm install
-# or
-bun install
+cd frontend && npm install
+cd ../backend && npm install
 ```
 
-3. Set up environment variables:
-Create a `.env` file in the `backend/` directory:
+### Environment Variables
+
+Create `backend/.env` with:
+
 ```env
-# Appwrite Configuration
 APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
 APPWRITE_PROJECT=your_project_id
-APPWRITE_DATABASE_ID=secure_print
-APPWRITE_COLLECTION_OTC=one_time_codes
-APPWRITE_BUCKET_ID=secure_files
+APPWRITE_API_KEY=your_appwrite_api_key
+APPWRITE_DATABASE_ID=your_database_id
+APPWRITE_COLLECTION_OTC=your_otc_collection_id
+APPWRITE_COLLECTION_FILES=your_files_collection_id
+
+BACKBLAZE_KEY_ID=your_backblaze_key_id
+BACKBLAZE_APPLICATION_KEY=your_backblaze_application_key
+BACKBLAZE_BUCKET_ID=your_backblaze_bucket_id
+BACKBLAZE_BUCKET_NAME=your_backblaze_bucket_name
+
+PORT=3001
+ALLOWED_ORIGINS=http://localhost:8080,http://localhost:8081
 ```
 
-### Running the Application
+Create `frontend/.env` for local development:
 
-#### Development Mode
-Start both frontend and backend simultaneously:
+```env
+VITE_API_URL=http://localhost:3001
+VITE_APPWRITE_ENDPOINT=https://syd.cloud.appwrite.io/v1
+VITE_APPWRITE_PROJECT=your_project_id
+```
+
+### Run
+
+From the repo root:
+
 ```bash
 npm run dev
 ```
 
 This starts:
-- Frontend: http://localhost:8080
-- Backend: http://localhost:3001
 
+- Frontend: `http://localhost:8080`
+- Backend: `http://localhost:3001`
 
-#### Production Build
-```bash
-# Build frontend
-npm run build:frontend
+## Production / Render Setup
 
-# Start backend in production
-npm run start:backend
-```
+### Frontend
+
+- Deploy `frontend/` as a Render static site
+- Set `VITE_API_URL` to your backend base URL, for example:
+  `https://secureprint-api.onrender.com`
+- Set `VITE_APPWRITE_ENDPOINT` and `VITE_APPWRITE_PROJECT`
+
+### Backend
+
+- Deploy `backend/` as a Render web service
+- Add all Appwrite and Backblaze environment variables from `backend/.env`
+- Set `ALLOWED_ORIGINS` to include your frontend origin, for example:
+  `https://secureprint.onrender.com`
+
+### Appwrite Platform Configuration
+
+Appwrite auth is called directly from the browser, so your frontend origin must be registered in Appwrite.
+
+Add a Web platform in the Appwrite console for:
+
+- `secureprint.onrender.com`
+- `localhost`
+
+If the hosted site is missing from Appwrite platforms, login and registration will fail with an origin error even if the backend is deployed correctly.
 
 ## API Endpoints
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/upload` | Upload encrypted file and generate OTC |
-| POST | `/api/retrieve` | Validate OTC and decrypt file (consumes OTC) |
-| POST | `/api/validate-otc` | Check OTC validity without consuming it |
-| GET | `/api/health` | Health check endpoint |
+| --- | --- | --- |
+| `POST` | `/api/upload` | Upload 1 to 5 files and generate a single OTC |
+| `POST` | `/api/validate-otc` | Check whether an OTC is still valid |
+| `POST` | `/api/retrieve` | Download the file or ZIP and consume the OTC |
+| `GET` | `/api/health` | Health check |
 
-## Project Structure
+## File Rules
 
-```
-secure-print-flow/
-├── backend/
-│   ├── appwrite.js      # Appwrite SDK configuration
-│   ├── server.js        # Express server with API routes
-│   └── package.json
-├── frontend/
-│   ├── src/
-│   │   ├── components/  # UI components (shadcn/ui, theme-toggle)
-│   │   ├── pages/       # Page components (Home, Login, Register)
-│   │   ├── hooks/       # Custom hooks (useAuth)
-│   │   ├── lib/         # Utilities (api, appwrite, encryption)
-│   │   └── main.tsx     # App entry point
-│   └── package.json
-├── package.json         # Root with concurrently scripts
-└── README.md
-```
+- Supported types: PDF, DOC, DOCX, TXT, PNG, JPG, JPEG
+- Backend upload limit: 100 MB per file
+- Frontend UX currently limits total selected size to 50 MB
+- Maximum files per upload: 5
+- OTC expiry: 10 minutes
 
-## Security Features
+## Scripts
 
-### Encryption
-- **Algorithm**: AES-256-GCM
-- **Key Derivation**: PBKDF2 with SHA-256
-- **IV**: 16 bytes per file
-- **Authentication Tag**: 16 bytes for integrity verification
+### Root
 
-### One-Time Code System
-- 6-digit numeric codes (000000-999999)
-- Single-use only
-- Auto-delete after retrieval
-- Optional validation without consumption
+- `npm run dev` - start frontend and backend together
+- `npm run build:frontend` - build the frontend
+- `npm run start:backend` - start the backend
+
+### Frontend
+
+- `npm run dev`
+- `npm run build`
+- `npm run lint`
+
+### Backend
+
+- `npm run dev`
+- `npm start`
+
+## Known Gaps
+
+- README claims from earlier versions about AES-256-GCM client-side encryption are no longer accurate for the current codebase.
+- Backend upload auth is not enforced server-side yet; the frontend currently gates upload access.
+- There is no automated cleanup job yet for expired OTCs that are never retrieved.
+- There are currently no automated tests in the repository.
 
 ## License
 
 MIT
-

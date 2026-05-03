@@ -6,7 +6,7 @@ const requiredEnvVars = ['APPWRITE_PROJECT', 'APPWRITE_API_KEY', 'APPWRITE_ENDPO
 const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (missingVars.length > 0) {
-  throw new Error(`Missing required Appwrite environment variables: ${missingVars.join(', ')}. Please set them in your .env file.`);
+  throw new Error('Service configuration is incomplete.');
 }
 
 const client = new Client();

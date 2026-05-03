@@ -9,17 +9,9 @@ function initBackblaze() {
   BUCKET_ID = process.env.BACKBLAZE_BUCKET_ID;
   BUCKET_NAME = process.env.BACKBLAZE_BUCKET_NAME;
 
-  // Validate required environment variables
   if (!KEY_ID || !APP_KEY || !BUCKET_ID) {
-    console.error('❌ Backblaze configuration missing:');
-    console.error(`   BACKBLAZE_KEY_ID: ${KEY_ID ? '✅ Set' : '❌ Missing'}`);
-    console.error(`   BACKBLAZE_APPLICATION_KEY: ${APP_KEY ? '✅ Set' : '❌ Missing'}`);
-    console.error(`   BACKBLAZE_BUCKET_ID: ${BUCKET_ID ? '✅ Set' : '❌ Missing'}`);
-    console.error(`   BACKBLAZE_BUCKET_NAME: ${BUCKET_NAME ? '✅ Set' : '❌ Optional'}`);
-    throw new Error('Backblaze configuration incomplete. Check your .env file.');
+    throw new Error('Storage configuration incomplete.');
   }
-
-  console.log('🔧 Backblaze configuration loaded');
 
   b2 = new B2({
     applicationKeyId: KEY_ID,
@@ -34,26 +26,11 @@ async function authorize() {
   if (!b2) initBackblaze();
   
   try {
-    console.log('🔐 Authorizing with Backblaze...');
     const res = await b2.authorize();
     authToken = res.data.authorizationToken;
     authExpiresAt = Date.now() + 1000 * 60 * 60;
-    console.log('✅ Backblaze authorization successful');
   } catch (error) {
-    console.error('❌ Backblaze authorization failed:', {
-      message: error.message,
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data
-    });
-    
-    if (error.response?.status === 401) {
-      throw new Error('Invalid Backblaze credentials. Check BACKBLAZE_KEY_ID and BACKBLAZE_APPLICATION_KEY.');
-    } else if (error.response?.status === 403) {
-      throw new Error('Backblaze access forbidden. Check bucket permissions and application key restrictions.');
-    } else {
-      throw new Error(`Backblaze authentication failed: ${error.message}`);
-    }
+    throw new Error('Storage authentication failed.');
   }
 }
 
@@ -111,6 +88,10 @@ async function downloadFile(fileId, fileName) {
 
 async function deleteFile(fileId, fileName) {
   await ensureAuth();
+
+  if (!fileId || !fileName) {
+    throw new Error('Storage deletion metadata incomplete.');
+  }
 
   try {
     return await b2.deleteFileVersion({ fileId, fileName });

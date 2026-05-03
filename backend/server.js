@@ -20,10 +20,9 @@ let databases;
 let APPWRITE_CONFIG;
 try {
   ({ databases, APPWRITE_CONFIG } = createDatabases());
-  console.log('Appwrite initialized successfully');
+  console.log('Backend dependencies initialized');
 } catch (error) {
-  console.error('Appwrite init failed:', error.message);
-  console.error('Check backend/.env has valid APPWRITE_* vars');
+  console.error('Backend initialization failed');
   process.exit(1);
 }
 
@@ -37,9 +36,32 @@ const ALLOWED_MIME_TYPES = [
   'text/plain',
   'image/png',
   'image/jpeg',
+  'image/jpg',
 ];
 
+const MIME_BY_EXTENSION = {
+  '.pdf': 'application/pdf',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.txt': 'text/plain',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+};
+
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+
+function getSafeMimeType(file) {
+  if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+    return file.mimetype === 'image/jpg' ? 'image/jpeg' : file.mimetype;
+  }
+
+  const ext = path.extname(file.originalname).toLowerCase();
+  const fallbackMime = MIME_BY_EXTENSION[ext];
+  const genericMime = !file.mimetype || file.mimetype === 'application/octet-stream';
+
+  return genericMime && fallbackMime ? fallbackMime : null;
+}
 
 // Use disk storage instead of memory for free tier (Render 512MB RAM)
 const uploadDir = path.join(os.tmpdir(), 'secure-print-uploads');
@@ -56,7 +78,7 @@ const upload = multer({
   }),
   limits: { fileSize: MAX_FILE_SIZE, files: 5 },
   fileFilter: (req, file, cb) => {
-    if (ALLOWED_MIME_TYPES.includes(file.mimetype)) cb(null, true);
+    if (getSafeMimeType(file)) cb(null, true);
     else cb(new Error('Invalid file type'), false);
   },
 });
@@ -64,8 +86,10 @@ const upload = multer({
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:8080,http://localhost:8081,https://secureprint.onrender.com').split(',');
+  const isLocalDevOrigin = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\]):(8080|8081|5173)$/.test(origin || '');
+  const isLanDevOrigin = /^http:\/\/(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}):(8080|8081|5173)$/.test(origin || '');
 
-  if (origin && allowedOrigins.includes(origin)) {
+  if (origin && (allowedOrigins.includes(origin) || isLocalDevOrigin || isLanDevOrigin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -125,19 +149,11 @@ app.post('/api/upload', uploadLimiter, upload.array('files', 5), async (req, res
   const tempFiles = [];
   
   try {
-    console.log('🚀 Upload request received:', {
-      fileCount: req.files?.length,
-      userId: req.body.userId,
-      timestamp: new Date().toISOString()
-    });
-
     const files = req.files;
     if (!files?.length) {
-      console.log('❌ No files uploaded');
       return res.status(400).json({ error: 'No files uploaded' });
     }
     if (files.length > 5) {
-      console.log('❌ Too many files:', files.length);
       return res.status(400).json({ error: 'Max 5 files' });
     }
 
@@ -145,22 +161,18 @@ app.post('/api/upload', uploadLimiter, upload.array('files', 5), async (req, res
     const fileSizes = [];
     const mimeTypes = [];
 
-    console.log('📁 Processing files:', files.map(f => ({ name: f.originalname, size: f.size, type: f.mimetype })));
-
     for (const file of files) {
       // Read file from disk
       const fileBuffer = fs.readFileSync(file.path);
       tempFiles.push(file.path); // Track for cleanup
-      
-      console.log(`⬆️ Uploading file: ${file.originalname} (${fileBuffer.length} bytes)`);
-      
-      const b2Result = await b2Upload(fileBuffer, file.originalname, file.mimetype);
-      console.log(`✅ File uploaded to B2: ${b2Result.fileId}`);
+
+      const safeMimeType = getSafeMimeType(file);
+      const b2Result = await b2Upload(fileBuffer, file.originalname, safeMimeType);
       
       b2FileIds.push(b2Result.fileId);
       fileNames.push(file.originalname);
       fileSizes.push(file.size);
-      mimeTypes.push(file.mimetype);
+      mimeTypes.push(safeMimeType);
     }
 
     // Validate arrays match
@@ -169,13 +181,11 @@ app.post('/api/upload', uploadLimiter, upload.array('files', 5), async (req, res
       throw new Error('Metadata array mismatch');
     }
 
-    console.log('🔢 Generating OTC...');
     const otc = await generateUniqueOTC();
     const now = new Date().toISOString();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
     const docId = ID.unique();
 
-    console.log('💾 Creating OTC document in Appwrite...');
     await databases.createDocument(APPWRITE_CONFIG.databaseId, APPWRITE_CONFIG.collectionOTC, docId, {
       otc,
       b2FileIds,
@@ -188,18 +198,13 @@ app.post('/api/upload', uploadLimiter, upload.array('files', 5), async (req, res
       userId: req.body.userId || 'anonymous',
     });
 
-    console.log('✅ Upload successful:', { otc, files: files.length, expiresAt });
     res.json({ success: true, otc, files: files.length });
   } catch (error) {
-    console.error('❌ Upload error:', {
-      message: error.message,
-      stack: error.stack,
-      timestamp: new Date().toISOString()
-    });
+    console.error('Upload failed');
     
     // Cleanup orphan B2 files
-    for (const b2FileId of b2FileIds) {
-      b2Delete(b2FileId).catch(err => console.error('Failed to cleanup B2 file:', err));
+    for (let i = 0; i < b2FileIds.length; i++) {
+      b2Delete(b2FileIds[i], fileNames[i]).catch(() => console.error('Storage cleanup failed'));
     }
     
     // Clean error messages for clients
@@ -222,7 +227,7 @@ app.post('/api/upload', uploadLimiter, upload.array('files', 5), async (req, res
       try {
         fs.unlinkSync(tempFile);
       } catch (e) {
-        console.error('Temp file cleanup failed:', e.message);
+        console.error('Temporary file cleanup failed');
       }
     }
   }
@@ -284,8 +289,8 @@ app.post('/api/retrieve', retrieveLimiter, async (req, res) => {
 
     // Cleanup B2 files
     for (let i = 0; i < b2FileIds.length; i++) {
-      await b2Delete(b2FileIds[i]).catch(err => {
-        console.error(`Cleanup failed for file ${i}:`, err.message);
+      await b2Delete(b2FileIds[i], fileNames[i]).catch(() => {
+        console.error('Storage cleanup failed');
       });
     }
     await databases.deleteDocument(APPWRITE_CONFIG.databaseId, APPWRITE_CONFIG.collectionOTC, docId);
@@ -297,8 +302,8 @@ app.post('/api/retrieve', retrieveLimiter, async (req, res) => {
     });
     res.send(contentBuffer);
   } catch (error) {
-    console.error('Retrieve error:', error);
-    res.status(500).json({ error: 'Retrieve failed', details: error.message });
+    console.error('Retrieve failed');
+    res.status(500).json({ error: 'Retrieve failed' });
   }
 });
 
@@ -330,7 +335,7 @@ app.post('/api/validate-otc', async (req, res) => {
       error: doc.used ? 'OTC already used' : expired ? 'OTC expired' : null
     });
   } catch (error) {
-    console.error('Validate error:', error);
+    console.error('Validation failed');
     res.status(500).json({ valid: false, error: 'Validation failed' });
   }
 });
@@ -339,24 +344,12 @@ app.post('/api/validate-otc', async (req, res) => {
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok', 
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    memory: process.memoryUsage()
+    timestamp: new Date().toISOString()
   });
 });
 
 app.listen(port, () => {
-  console.log(`🚀 SecurePrint backend running on port ${port}`);
-  console.log(`📊 Health check: http://localhost:${port}/api/health`);
-  console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📁 Upload directory: ${uploadDir}`);
-  console.log(`⚙️  Rate limits: 10 uploads/min, 10 retrieves/min`);
-  
-  // Check critical services
-  console.log('🔍 Checking services...');
-  console.log(`✅ Appwrite: ${APPWRITE_CONFIG.databaseId}/${APPWRITE_CONFIG.collectionOTC}`);
-  console.log(`✅ Backblaze: ${process.env.BACKBLAZE_BUCKET_ID ? 'Configured' : 'Not configured'}`);
-  console.log('✅ Server ready to accept requests');
+  console.log(`SecurePrint backend listening on port ${port}`);
 });
 
 export default app;

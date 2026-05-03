@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence, useAnimationControls } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import { Shield, Upload, FileKey, Copy, Check, AlertCircle, LogOut, Trash2, FileText, Image, Download, Clock, User } from 'lucide-react';
@@ -70,6 +70,7 @@ function UploadPage() {
   const [dragActive, setDragActive] = useState(false);
   const controls = useAnimationControls();
   const [userInitials, setUserInitials] = useState('');
+  const otcCardRef = useRef<HTMLElement | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -143,27 +144,30 @@ function UploadPage() {
   };
 
   const handleUpload = async () => {
-    console.log('🚀 Starting upload process...');
     setUploading(true);
+    setOtc('');
+    setCopied(false);
+    setFiles(prev => prev.map(f => ({
+      ...f,
+      progress: 0,
+      status: 'uploading' as const,
+      error: undefined
+    } as FileWithProgress)));
     controls.start('uploadShake');
 
     try {
-      console.log('📁 Files to upload:', files.map(f => ({ name: f.file.name, size: f.file.size, type: f.file.type })));
-      
       const { uploadBatchFiles } = await import('../lib/api');
       const fileArray = files.map(f => f.file);
       
-      console.log('📤 Calling uploadBatchFiles...');
       const result = await uploadBatchFiles(fileArray, 'anonymous', (progress: number) => {
-        console.log('📊 Upload progress:', progress + '%');
         setFiles(prev => prev.map(f => ({ ...f, progress } as FileWithProgress)));
       });
 
-      console.log('📥 Upload result:', result);
-
       if (result.success && result.otc) {
-        console.log('✅ Upload successful, OTC:', result.otc);
         setOtc(result.otc);
+        requestAnimationFrame(() => {
+          otcCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
         controls.start('successBounce');
         confetti({
           particleCount: 100,
@@ -172,16 +176,13 @@ function UploadPage() {
         });
         setFiles(prev => prev.map(f => ({ ...f, status: 'success' as const } as FileWithProgress)));
       } else {
-        console.error('❌ Upload failed - no success or OTC in response:', result);
-        const msg = (result as any).error || 'Upload failed - no OTC received';
+        const msg = (result as { error?: string }).error || 'Upload failed - no OTC received';
         setFiles(prev => prev.map(f => ({ ...f, status: 'error' as const, error: msg } as FileWithProgress)));
       }
     } catch (error) {
-      console.error('❌ Upload error:', error);
       const msg = error instanceof Error ? error.message : 'Upload failed';
       setFiles(prev => prev.map(f => ({ ...f, status: 'error' as const, error: msg } as FileWithProgress)));
     } finally {
-      console.log('🏁 Upload process finished');
       setUploading(false);
     }
   };
@@ -207,8 +208,9 @@ function UploadPage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const filesReady = files.length > 0 && files.every(f => f.status === 'success' || f.status === 'pending');
+  const uploadComplete = files.length > 0 && files.every(f => f.status === 'success') && Boolean(otc);
   const hasErrors = files.some(f => f.status === 'error');
+  const firstError = files.find(f => f.status === 'error')?.error;
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
@@ -328,6 +330,31 @@ function UploadPage() {
           </Card>
         </motion.section>
 
+        {/* Compact OTC */}
+        <AnimatePresence>
+          {otc && (
+            <motion.section 
+              ref={otcCardRef}
+              initial={{ scale: 0.95, opacity: 0, y: -8 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              className="mb-10 max-w-sm mx-auto"
+            >
+              <Card className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-xl border-0">
+                <CardContent className="p-6 text-center">
+                  <FileKey className="w-10 h-10 mx-auto mb-3 opacity-90" />
+                  <h3 className="text-lg font-semibold mb-3">Your OTC</h3>
+                  <div className="bg-white/20 rounded-xl p-3 mb-4">
+                    <div className="text-2xl font-mono uppercase font-bold tracking-widest">{otc}</div>
+                  </div>
+                  <Button size="sm" className="w-full" variant="secondary" onClick={copyOtc}>
+                    {copied ? 'Copied ✓' : 'Copy Code'}
+                  </Button>
+                </CardContent>
+              </Card>
+            </motion.section>
+          )}
+        </AnimatePresence>
+
         {/* File Grid */}
         <AnimatePresence>
           {files.length > 0 && (
@@ -400,7 +427,9 @@ function UploadPage() {
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-100 text-emerald-700">Uploaded</span>
                             )}
                             {file.status === 'error' && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-700">Failed</span>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-700">
+                                {file.error || 'Failed'}
+                              </span>
                             )}
                           </div>
                         </div>
@@ -427,7 +456,7 @@ function UploadPage() {
 
         {/* CTA */}
         <motion.div className="text-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          {!filesReady ? (
+          {!uploadComplete ? (
             <Button
               size="lg"
               className="w-full max-w-sm mx-auto h-12 text-base bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 text-white shadow-lg hover:shadow-xl"
@@ -456,30 +485,6 @@ function UploadPage() {
           )}
         </motion.div>
 
-        {/* Compact OTC */}
-        <AnimatePresence>
-          {otc && (
-            <motion.section 
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="mt-12 max-w-sm mx-auto"
-            >
-              <Card className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-xl border-0">
-                <CardContent className="p-6 text-center">
-                  <FileKey className="w-10 h-10 mx-auto mb-3 opacity-90" />
-                  <h3 className="text-lg font-semibold mb-3">Your OTC</h3>
-                  <div className="bg-white/20 rounded-xl p-3 mb-4">
-                    <div className="text-2xl font-mono uppercase font-bold tracking-widest">{otc}</div>
-                  </div>
-                  <Button size="sm" className="w-full" variant="secondary" onClick={copyOtc}>
-                    {copied ? 'Copied ✓' : 'Copy Code'}
-                  </Button>
-                </CardContent>
-              </Card>
-            </motion.section>
-          )}
-        </AnimatePresence>
-
         {hasErrors && (
           <motion.div 
             initial={{ opacity: 0 }}
@@ -490,7 +495,7 @@ function UploadPage() {
               <AlertCircle className="w-6 h-6 text-red-500 flex-shrink-0" />
               <div>
                 <h4 className="font-semibold text-red-900 mb-1 text-sm">Upload failed</h4>
-                <p className="text-sm text-red-800">Check file types/sizes. Try again.</p>
+                <p className="text-sm text-red-800">{firstError || 'Check file types/sizes. Try again.'}</p>
               </div>
             </div>
           </motion.div>
@@ -501,4 +506,3 @@ function UploadPage() {
 }
 
 export default UploadPage;
-

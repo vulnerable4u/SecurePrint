@@ -11,13 +11,27 @@ export const account = new Account(client);
 
 export { client };
 
+function isLoopbackHost(hostname) {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+}
+
+function getNetworkErrorMessage(error) {
+  const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+
+  if (error.message === 'Network request failed' && currentHost && !isLoopbackHost(currentHost)) {
+    return 'Unable to connect to the authentication service. Please try again from the configured app URL.';
+  }
+
+  return error.message;
+}
+
 // Auth functions
 export async function login(email, password) {
   try {
     const session = await account.createEmailSession(email, password);
     return { success: true, session };
   } catch (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: getNetworkErrorMessage(error) };
   }
 }
 
@@ -26,7 +40,7 @@ export async function register(email, password, name) {
     const user = await account.create('unique()', email, password, name);
     return { success: true, user };
   } catch (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: getNetworkErrorMessage(error) };
   }
 }
 
@@ -94,4 +108,3 @@ export function getInitials(name) {
     .join('')
     .toUpperCase();
 }
-

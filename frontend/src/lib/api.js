@@ -1,5 +1,9 @@
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const rawApiBaseUrl = import.meta.env.VITE_API_URL || '/api';
+const normalizedApiBaseUrl = rawApiBaseUrl.replace(/\/$/, '');
+const API_BASE_URL = normalizedApiBaseUrl.endsWith('/api')
+  ? normalizedApiBaseUrl
+  : `${normalizedApiBaseUrl}/api`;
 
 /**
  * API Service for Secure Print Backend
@@ -14,16 +18,11 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
  * @returns {Promise<{success: boolean, otc: string, files: number}>}
  */
 export async function uploadBatchFiles(files, userId = 'anonymous', onProgress = null) {
-  console.log('🔧 uploadBatchFiles called with:', { filesCount: files.length, userId });
-  
   const formData = new FormData();
   files.forEach(file => {
-    console.log('📎 Adding file to FormData:', file.name, file.size, file.type);
     formData.append('files', file);
   });
   formData.append('userId', userId);
-
-  console.log('🌐 API_BASE_URL:', import.meta.env.VITE_API_URL);
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -36,53 +35,36 @@ export async function uploadBatchFiles(files, userId = 'anonymous', onProgress =
     });
     
     xhr.addEventListener('load', () => {
-      console.log('📥 XHR load event:', {
-        status: xhr.status,
-        statusText: xhr.statusText,
-        responseText: xhr.responseText
-      });
-      
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const data = JSON.parse(xhr.responseText);
-          console.log('✅ Parsed response data:', data);
           resolve(data);
-        } catch (e) {
-          console.error('❌ JSON parse error:', e);
+        } catch {
           reject(new Error('Invalid response format from server'));
         }
       } else if (xhr.status === 413) {
-        console.error('❌ File too large error');
         reject(new Error('File too large'));
       } else if (xhr.status === 400) {
         try {
           const data = JSON.parse(xhr.responseText);
-          console.error('❌ Validation error:', data);
           reject(new Error(data.error || 'Validation failed'));
         } catch {
-          console.error('❌ Validation error - invalid JSON');
           reject(new Error('Upload validation failed'));
         }
       } else {
-        console.error('❌ Upload failed with status:', xhr.status, xhr.responseText);
-        reject(new Error(`Upload failed: ${xhr.status}`));
+        reject(new Error('Upload failed. Please try again.'));
       }
     });
     
-    xhr.addEventListener('error', (e) => {
-      console.error('❌ XHR error event:', e);
+    xhr.addEventListener('error', () => {
       reject(new Error('Network error'));
     });
-    xhr.addEventListener('abort', (e) => {
-      console.error('❌ XHR abort event:', e);
+    xhr.addEventListener('abort', () => {
       reject(new Error('Upload cancelled'));
     });
     
     const uploadUrl = `${API_BASE_URL}/upload`;
-    console.log('🚀 Opening XHR request to:', uploadUrl);
     xhr.open('POST', uploadUrl);
-    
-    console.log('📤 Sending XHR request...');
     xhr.send(formData);
   });
 }
@@ -162,11 +144,11 @@ function uploadWithProgress(formData, onProgress) {
           } else {
             reject(new Error(data.error || 'Upload failed'));
           }
-        } catch (e) {
+        } catch {
           reject(new Error('Invalid response'));
         }
       } else {
-        reject(new Error(`Upload failed with status ${xhr.status}`));
+        reject(new Error('Upload failed. Please try again.'));
       }
     });
     
@@ -227,7 +209,6 @@ export async function validateOTC(otc) {
     
     return data;
   } catch (error) {
-    console.error('Validation error:', error);
     return { valid: false, error: error.message };
   }
 }
@@ -272,7 +253,6 @@ export async function retrieveFile(otc, encryptionKey) {
       mimeType
     };
   } catch (error) {
-    console.error('Retrieve error:', error);
     return { success: false, error: error.message };
   }
 }
@@ -287,8 +267,6 @@ export async function healthCheck() {
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error('Health check error:', error);
-    return { status: 'unhealthy', error: error.message };
+    return { status: 'unhealthy', error: 'Health check failed' };
   }
 }
-
